@@ -15,7 +15,8 @@ class SectorConstraints extends Constraints {
     this.maxDeltaRadius: double.INFINITY,
     this.minDeltaTheta: 0.0,
     this.maxDeltaTheta: kTwoPi
-  });
+  }) : assert(maxDeltaRadius >= minDeltaRadius),
+       assert(maxDeltaTheta >= minDeltaTheta);
 
   const SectorConstraints.tight({ double deltaRadius: 0.0, double deltaTheta: 0.0 })
     : minDeltaRadius = deltaRadius,
@@ -148,7 +149,7 @@ abstract class RenderDecoratedSector extends RenderSector {
 
   BoxDecoration _decoration;
   BoxDecoration get decoration => _decoration;
-  void set decoration (BoxDecoration value) {
+  set decoration(BoxDecoration value) {
     if (value == _decoration)
       return;
     _decoration = value;
@@ -165,15 +166,15 @@ abstract class RenderDecoratedSector extends RenderSector {
     if (_decoration == null)
       return;
 
-    if (_decoration.backgroundColor != null) {
+    if (_decoration.color != null) {
       final Canvas canvas = context.canvas;
-      Paint paint = new Paint()..color = _decoration.backgroundColor;
-      Path path = new Path();
-      double outerRadius = (parentData.radius + deltaRadius);
-      Rect outerBounds = new Rect.fromLTRB(offset.dx-outerRadius, offset.dy-outerRadius, offset.dx+outerRadius, offset.dy+outerRadius);
+      final Paint paint = new Paint()..color = _decoration.color;
+      final Path path = new Path();
+      final double outerRadius = parentData.radius + deltaRadius;
+      final Rect outerBounds = new Rect.fromLTRB(offset.dx-outerRadius, offset.dy-outerRadius, offset.dx+outerRadius, offset.dy+outerRadius);
       path.arcTo(outerBounds, parentData.theta, deltaTheta, true);
-      double innerRadius = parentData.radius;
-      Rect innerBounds = new Rect.fromLTRB(offset.dx-innerRadius, offset.dy-innerRadius, offset.dx+innerRadius, offset.dy+innerRadius);
+      final double innerRadius = parentData.radius;
+      final Rect innerBounds = new Rect.fromLTRB(offset.dx-innerRadius, offset.dy-innerRadius, offset.dx+innerRadius, offset.dy+innerRadius);
       path.arcTo(innerBounds, parentData.theta + deltaTheta, -deltaTheta, false);
       path.close();
       canvas.drawPath(path, paint);
@@ -216,12 +217,16 @@ class RenderSectorRing extends RenderSectorWithChildren {
     BoxDecoration decoration,
     double deltaRadius: double.INFINITY,
     double padding: 0.0
-  }) : _padding = padding, _desiredDeltaRadius = deltaRadius, super(decoration);
+  }) : _padding = padding,
+       assert(deltaRadius >= 0.0),
+       _desiredDeltaRadius = deltaRadius,
+       super(decoration);
 
   double _desiredDeltaRadius;
   double get desiredDeltaRadius => _desiredDeltaRadius;
-  void set desiredDeltaRadius(double value) {
+  set desiredDeltaRadius(double value) {
     assert(value != null);
+    assert(value >= 0);
     if (_desiredDeltaRadius != value) {
       _desiredDeltaRadius = value;
       markNeedsLayout();
@@ -230,7 +235,7 @@ class RenderSectorRing extends RenderSectorWithChildren {
 
   double _padding;
   double get padding => _padding;
-  void set padding(double value) {
+  set padding(double value) {
     // TODO(ianh): avoid code duplication
     assert(value != null);
     if (_padding != value) {
@@ -248,19 +253,19 @@ class RenderSectorRing extends RenderSectorWithChildren {
 
   @override
   SectorDimensions getIntrinsicDimensions(SectorConstraints constraints, double radius) {
-    double outerDeltaRadius = constraints.constrainDeltaRadius(desiredDeltaRadius);
-    double innerDeltaRadius = outerDeltaRadius - padding * 2.0;
-    double childRadius = radius + padding;
-    double paddingTheta = math.atan(padding / (radius + outerDeltaRadius));
+    final double outerDeltaRadius = constraints.constrainDeltaRadius(desiredDeltaRadius);
+    final double innerDeltaRadius = math.max(0.0, outerDeltaRadius - padding * 2.0);
+    final double childRadius = radius + padding;
+    final double paddingTheta = math.atan(padding / (radius + outerDeltaRadius));
     double innerTheta = paddingTheta; // increments with each child
-    double remainingDeltaTheta = constraints.maxDeltaTheta - (innerTheta + paddingTheta);
+    double remainingDeltaTheta = math.max(0.0, constraints.maxDeltaTheta - (innerTheta + paddingTheta));
     RenderSector child = firstChild;
     while (child != null) {
-      SectorConstraints innerConstraints = new SectorConstraints(
+      final SectorConstraints innerConstraints = new SectorConstraints(
         maxDeltaRadius: innerDeltaRadius,
         maxDeltaTheta: remainingDeltaTheta
       );
-      SectorDimensions childDimensions = child.getIntrinsicDimensions(innerConstraints, childRadius);
+      final SectorDimensions childDimensions = child.getIntrinsicDimensions(innerConstraints, childRadius);
       innerTheta += childDimensions.deltaTheta;
       remainingDeltaTheta -= childDimensions.deltaTheta;
       final SectorChildListParentData childParentData = child.parentData;
@@ -277,17 +282,17 @@ class RenderSectorRing extends RenderSectorWithChildren {
 
   @override
   void performLayout() {
-    assert(this.parentData is SectorParentData);
+    assert(parentData is SectorParentData);
     deltaRadius = constraints.constrainDeltaRadius(desiredDeltaRadius);
     assert(deltaRadius < double.INFINITY);
-    double innerDeltaRadius = deltaRadius - padding * 2.0;
-    double childRadius = this.parentData.radius + padding;
-    double paddingTheta = math.atan(padding / (this.parentData.radius + deltaRadius));
+    final double innerDeltaRadius = deltaRadius - padding * 2.0;
+    final double childRadius = parentData.radius + padding;
+    final double paddingTheta = math.atan(padding / (parentData.radius + deltaRadius));
     double innerTheta = paddingTheta; // increments with each child
     double remainingDeltaTheta = constraints.maxDeltaTheta - (innerTheta + paddingTheta);
     RenderSector child = firstChild;
     while (child != null) {
-      SectorConstraints innerConstraints = new SectorConstraints(
+      final SectorConstraints innerConstraints = new SectorConstraints(
         maxDeltaRadius: innerDeltaRadius,
         maxDeltaTheta: remainingDeltaTheta
       );
@@ -334,7 +339,7 @@ class RenderSectorSlice extends RenderSectorWithChildren {
 
   double _desiredDeltaTheta;
   double get desiredDeltaTheta => _desiredDeltaTheta;
-  void set desiredDeltaTheta(double value) {
+  set desiredDeltaTheta(double value) {
     assert(value != null);
     if (_desiredDeltaTheta != value) {
       _desiredDeltaTheta = value;
@@ -344,7 +349,7 @@ class RenderSectorSlice extends RenderSectorWithChildren {
 
   double _padding;
   double get padding => _padding;
-  void set padding(double value) {
+  set padding(double value) {
     // TODO(ianh): avoid code duplication
     assert(value != null);
     if (_padding != value) {
@@ -362,19 +367,19 @@ class RenderSectorSlice extends RenderSectorWithChildren {
 
   @override
   SectorDimensions getIntrinsicDimensions(SectorConstraints constraints, double radius) {
-    assert(this.parentData is SectorParentData);
-    double paddingTheta = math.atan(padding / this.parentData.radius);
-    double outerDeltaTheta = constraints.constrainDeltaTheta(desiredDeltaTheta);
-    double innerDeltaTheta = outerDeltaTheta - paddingTheta * 2.0;
-    double childRadius = this.parentData.radius + padding;
+    assert(parentData is SectorParentData);
+    final double paddingTheta = math.atan(padding / parentData.radius);
+    final double outerDeltaTheta = constraints.constrainDeltaTheta(desiredDeltaTheta);
+    final double innerDeltaTheta = outerDeltaTheta - paddingTheta * 2.0;
+    double childRadius = parentData.radius + padding;
     double remainingDeltaRadius = constraints.maxDeltaRadius - (padding * 2.0);
     RenderSector child = firstChild;
     while (child != null) {
-      SectorConstraints innerConstraints = new SectorConstraints(
+      final SectorConstraints innerConstraints = new SectorConstraints(
         maxDeltaRadius: remainingDeltaRadius,
         maxDeltaTheta: innerDeltaTheta
       );
-      SectorDimensions childDimensions = child.getIntrinsicDimensions(innerConstraints, childRadius);
+      final SectorDimensions childDimensions = child.getIntrinsicDimensions(innerConstraints, childRadius);
       childRadius += childDimensions.deltaRadius;
       remainingDeltaRadius -= childDimensions.deltaRadius;
       final SectorChildListParentData childParentData = child.parentData;
@@ -383,23 +388,23 @@ class RenderSectorSlice extends RenderSectorWithChildren {
       remainingDeltaRadius -= padding;
     }
     return new SectorDimensions.withConstraints(constraints,
-                                                deltaRadius: childRadius - this.parentData.radius,
+                                                deltaRadius: childRadius - parentData.radius,
                                                 deltaTheta: outerDeltaTheta);
   }
 
   @override
   void performLayout() {
-    assert(this.parentData is SectorParentData);
+    assert(parentData is SectorParentData);
     deltaTheta = constraints.constrainDeltaTheta(desiredDeltaTheta);
     assert(deltaTheta <= kTwoPi);
-    double paddingTheta = math.atan(padding / this.parentData.radius);
-    double innerTheta = this.parentData.theta + paddingTheta;
-    double innerDeltaTheta = deltaTheta - paddingTheta * 2.0;
-    double childRadius = this.parentData.radius + padding;
+    final double paddingTheta = math.atan(padding / parentData.radius);
+    final double innerTheta = parentData.theta + paddingTheta;
+    final double innerDeltaTheta = deltaTheta - paddingTheta * 2.0;
+    double childRadius = parentData.radius + padding;
     double remainingDeltaRadius = constraints.maxDeltaRadius - (padding * 2.0);
     RenderSector child = firstChild;
     while (child != null) {
-      SectorConstraints innerConstraints = new SectorConstraints(
+      final SectorConstraints innerConstraints = new SectorConstraints(
         maxDeltaRadius: remainingDeltaRadius,
         maxDeltaTheta: innerDeltaTheta
       );
@@ -413,7 +418,7 @@ class RenderSectorSlice extends RenderSectorWithChildren {
       childRadius += padding;
       remainingDeltaRadius -= padding;
     }
-    deltaRadius = childRadius - this.parentData.radius;
+    deltaRadius = childRadius - parentData.radius;
   }
 
   // offset must point to the center of our circle
@@ -442,7 +447,7 @@ class RenderBoxToRenderSectorAdapter extends RenderBox with RenderObjectWithChil
 
   double _innerRadius;
   double get innerRadius => _innerRadius;
-  void set innerRadius(double value) {
+  set innerRadius(double value) {
     _innerRadius = value;
     markNeedsLayout();
   }
@@ -454,82 +459,87 @@ class RenderBoxToRenderSectorAdapter extends RenderBox with RenderObjectWithChil
   }
 
   @override
-  double getMinIntrinsicWidth(BoxConstraints constraints) {
+  double computeMinIntrinsicWidth(double height) {
     if (child == null)
-      return super.getMinIntrinsicWidth(constraints);
-    return getIntrinsicDimensions(constraints).width;
+      return 0.0;
+    return getIntrinsicDimensions(height: height).width;
   }
 
   @override
-  double getMaxIntrinsicWidth(BoxConstraints constraints) {
+  double computeMaxIntrinsicWidth(double height) {
     if (child == null)
-      return super.getMaxIntrinsicWidth(constraints);
-    return getIntrinsicDimensions(constraints).width;
+      return 0.0;
+    return getIntrinsicDimensions(height: height).width;
   }
 
   @override
-  double getMinIntrinsicHeight(BoxConstraints constraints) {
+  double computeMinIntrinsicHeight(double width) {
     if (child == null)
-      return super.getMinIntrinsicHeight(constraints);
-    return getIntrinsicDimensions(constraints).height;
+      return 0.0;
+    return getIntrinsicDimensions(width: width).height;
   }
 
   @override
-  double getMaxIntrinsicHeight(BoxConstraints constraints) {
+  double computeMaxIntrinsicHeight(double width) {
     if (child == null)
-      return super.getMaxIntrinsicHeight(constraints);
-    return getIntrinsicDimensions(constraints).height;
+      return 0.0;
+    return getIntrinsicDimensions(width: width).height;
   }
 
-  Size getIntrinsicDimensions(BoxConstraints constraints) {
+  Size getIntrinsicDimensions({
+    double width: double.INFINITY,
+    double height: double.INFINITY
+  }) {
     assert(child is RenderSector);
     assert(child.parentData is SectorParentData);
-    assert(constraints.maxWidth < double.INFINITY || constraints.maxHeight < double.INFINITY);
-    double maxChildDeltaRadius = math.min(constraints.maxWidth, constraints.maxHeight) / 2.0 - innerRadius;
-    SectorDimensions childDimensions = child.getIntrinsicDimensions(new SectorConstraints(maxDeltaRadius: maxChildDeltaRadius), innerRadius);
-    double dimension = (innerRadius + childDimensions.deltaRadius) * 2.0;
-    return constraints.constrain(new Size(dimension, dimension));
+    assert(width != null);
+    assert(height != null);
+    if (!width.isFinite && !height.isFinite)
+      return Size.zero;
+    final double maxChildDeltaRadius = math.max(0.0, math.min(width, height) / 2.0 - innerRadius);
+    final SectorDimensions childDimensions = child.getIntrinsicDimensions(new SectorConstraints(maxDeltaRadius: maxChildDeltaRadius), innerRadius);
+    final double dimension = (innerRadius + childDimensions.deltaRadius) * 2.0;
+    return new Size.square(dimension);
   }
 
   @override
   void performLayout() {
-    if (child == null) {
+    if (child == null || (!constraints.hasBoundedWidth && !constraints.hasBoundedHeight)) {
       size = constraints.constrain(Size.zero);
-    } else {
-      assert(child is RenderSector);
-      assert(constraints.maxWidth < double.INFINITY || constraints.maxHeight < double.INFINITY);
-      double maxChildDeltaRadius = math.min(constraints.maxWidth, constraints.maxHeight) / 2.0 - innerRadius;
-      assert(child.parentData is SectorParentData);
-      child.parentData.radius = innerRadius;
-      child.parentData.theta = 0.0;
-      child.layout(new SectorConstraints(maxDeltaRadius: maxChildDeltaRadius), parentUsesSize: true);
-      double dimension = (innerRadius + child.deltaRadius) * 2.0;
-      size = constraints.constrain(new Size(dimension, dimension));
+      return;
     }
+    assert(child is RenderSector);
+    assert(child.parentData is SectorParentData);
+    final double maxChildDeltaRadius = math.min(constraints.maxWidth, constraints.maxHeight) / 2.0 - innerRadius;
+    child.parentData.radius = innerRadius;
+    child.parentData.theta = 0.0;
+    child.layout(new SectorConstraints(maxDeltaRadius: maxChildDeltaRadius), parentUsesSize: true);
+    final double dimension = (innerRadius + child.deltaRadius) * 2.0;
+    size = constraints.constrain(new Size(dimension, dimension));
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
     if (child != null) {
-      Rect bounds = offset & size;
+      final Rect bounds = offset & size;
       // we move the offset to the center of the circle for the RenderSectors
-      context.paintChild(child, bounds.center.toOffset());
+      context.paintChild(child, bounds.center);
     }
   }
 
   @override
-  bool hitTest(HitTestResult result, { Point position }) {
+  bool hitTest(HitTestResult result, { Offset position }) {
     if (child == null)
       return false;
-    double x = position.x;
-    double y = position.y;
+    double x = position.dx;
+    double y = position.dy;
     // translate to our origin
-    x -= size.width/2.0;
-    y -= size.height/2.0;
+    x -= size.width / 2.0;
+    y -= size.height / 2.0;
     // convert to radius/theta
-    double radius = math.sqrt(x*x+y*y);
-    double theta = (math.atan2(x, -y) - math.PI/2.0) % kTwoPi;
+    final double radius = math.sqrt(x * x + y * y);
+    final double theta = (math.atan2(x, -y) - math.PI / 2.0) % kTwoPi;
     if (radius < innerRadius)
       return false;
     if (radius >= innerRadius + child.deltaRadius)
@@ -544,11 +554,10 @@ class RenderBoxToRenderSectorAdapter extends RenderBox with RenderObjectWithChil
 }
 
 class RenderSolidColor extends RenderDecoratedSector {
-  RenderSolidColor(Color backgroundColor, {
+  RenderSolidColor(this.backgroundColor, {
     this.desiredDeltaRadius: double.INFINITY,
     this.desiredDeltaTheta: kTwoPi
-  }) : this.backgroundColor = backgroundColor,
-       super(new BoxDecoration(backgroundColor: backgroundColor));
+  }) : super(new BoxDecoration(color: backgroundColor));
 
   double desiredDeltaRadius;
   double desiredDeltaTheta;
@@ -568,9 +577,9 @@ class RenderSolidColor extends RenderDecoratedSector {
   @override
   void handleEvent(PointerEvent event, HitTestEntry entry) {
     if (event is PointerDownEvent) {
-      decoration = new BoxDecoration(backgroundColor: const Color(0xFFFF0000));
+      decoration = const BoxDecoration(color: const Color(0xFFFF0000));
     } else if (event is PointerUpEvent) {
-      decoration = new BoxDecoration(backgroundColor: backgroundColor);
+      decoration = new BoxDecoration(color: backgroundColor);
     }
   }
 }

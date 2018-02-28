@@ -2,233 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:ui' as ui show Paragraph, ParagraphBuilder, ParagraphStyle, TextBox;
+import 'dart:ui' as ui show Paragraph, ParagraphBuilder, ParagraphConstraints, ParagraphStyle;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 
 import 'basic_types.dart';
-import 'text_editing.dart';
-import 'text_style.dart';
+import 'text_span.dart';
 
-// TODO(abarth): Should this be somewhere more general?
-bool _deepEquals(List<Object> a, List<Object> b) {
-  if (a == null)
-    return b == null;
-  if (b == null || a.length != b.length)
-    return false;
-  for (int i = 0; i < a.length; ++i) {
-    if (a[i] != b[i])
-      return false;
-  }
-  return true;
-}
+export 'package:flutter/services.dart' show TextRange, TextSelection;
 
-/// An immutable span of text.
-///
-/// A [TextSpan] object can be styled using its [style] property.
-/// The style will be applied to the [text] and the [children].
-///
-/// A [TextSpan] object can just have plain text, or it can have
-/// children [TextSpan] objects with their own styles that (possibly
-/// only partially) override the [style] of this object. If a
-/// [TextSpan] has both [text] and [children], then the [text] is
-/// treated as if it was an unstyled [TextSpan] at the start of the
-/// [children] list.
-///
-/// To paint a [TextSpan] on a [Canvas], use a [TextPainter]. To display a text
-/// span in a widget, use a [RichText]. For text with a single style, consider
-/// using the [Text] widget.
-///
-/// See also:
-///
-///  * [Text]
-///  * [RichText]
-///  * [TextPainter]
-class TextSpan {
-  /// Creates a [TextSpan] with the given values.
-  ///
-  /// For the object to be useful, at least one of [text] or
-  /// [children] should be set.
-  const TextSpan({
-    this.style,
-    this.text,
-    this.children,
-    this.recognizer
-  });
-
-  /// The style to apply to the [text] and the [children].
-  final TextStyle style;
-
-  /// The text contained in the span.
-  ///
-  /// If both [text] and [children] are non-null, the text will preceed the
-  /// children.
-  final String text;
-
-  /// Additional spans to include as children.
-  ///
-  /// If both [text] and [children] are non-null, the text will preceed the
-  /// children.
-  ///
-  /// Modifying the list after the [TextSpan] has been created is not
-  /// supported and may have unexpected results.
-  ///
-  /// The list must not contain any nulls.
-  final List<TextSpan> children;
-
-  /// A gesture recognizer that will receive events that hit this text span.
-  ///
-  /// [TextSpan] itself does not implement hit testing or event
-  /// dispatch. The owner of the [TextSpan] tree to which the object
-  /// belongs is responsible for dispatching events.
-  ///
-  /// For an example, see [RenderParagraph] in the Flutter rendering library.
-  final GestureRecognizer recognizer;
-
-  /// Apply the [style], [text], and [children] of this object to the
-  /// given [ParagraphBuilder], from which a [Paragraph] can be obtained.
-  /// [Paragraph] objects can be drawn on [Canvas] objects.
-  ///
-  /// Rather than using this directly, it's simpler to use the
-  /// [TextPainter] class to paint [TextSpan] objects onto [Canvas]
-  /// objects.
-  void build(ui.ParagraphBuilder builder) {
-    assert(debugAssertValid());
-    final bool hasStyle = style != null;
-    if (hasStyle)
-      builder.pushStyle(style.textStyle);
-    if (text != null)
-      builder.addText(text);
-    if (children != null) {
-      for (TextSpan child in children) {
-        assert(child != null);
-        child.build(builder);
-      }
-    }
-    if (hasStyle)
-      builder.pop();
-  }
-
-  /// Walks this text span and its decendants in pre-order and calls [visitor] for each span that has text.
-  bool visitTextSpan(bool visitor(TextSpan span)) {
-    if (text != null) {
-      if (!visitor(this))
-        return false;
-    }
-    if (children != null) {
-      for (TextSpan child in children) {
-        if (!child.visitTextSpan(visitor))
-          return false;
-      }
-    }
-    return true;
-  }
-
-  /// Returns the text span that contains the given position in the text.
-  TextSpan getSpanForPosition(TextPosition position) {
-    assert(debugAssertValid());
-    TextAffinity affinity = position.affinity;
-    int targetOffset = position.offset;
-    int offset = 0;
-    TextSpan result;
-    visitTextSpan((TextSpan span) {
-      assert(result == null);
-      int endOffset = offset + span.text.length;
-      if (targetOffset == offset && affinity == TextAffinity.downstream ||
-          targetOffset > offset && targetOffset < endOffset ||
-          targetOffset == endOffset && affinity == TextAffinity.upstream) {
-        result = span;
-        return false;
-      }
-      offset = endOffset;
-      return true;
-    });
-    return result;
-  }
-
-  /// Flattens the [TextSpan] tree into a single string.
-  ///
-  /// Styles are not honored in this process.
-  String toPlainText() {
-    assert(debugAssertValid());
-    StringBuffer buffer = new StringBuffer();
-    visitTextSpan((TextSpan span) {
-      buffer.write(span.text);
-      return true;
-    });
-    return buffer.toString();
-  }
-
-  @override
-  String toString([String prefix = '']) {
-    StringBuffer buffer = new StringBuffer();
-    buffer.writeln('$prefix$runtimeType:');
-    String indent = '$prefix  ';
-    if (style != null)
-      buffer.writeln(style.toString(indent));
-    if (text != null)
-      buffer.writeln('$indent"$text"');
-    if (children != null) {
-      for (TextSpan child in children) {
-        if (child != null) {
-          buffer.write(child.toString(indent));
-        } else {
-          buffer.writeln('$indent<null>');
-        }
-      }
-    }
-    if (style == null && text == null && children == null)
-      buffer.writeln('$indent(empty)');
-    return buffer.toString();
-  }
-
-  /// In checked mode, throws an exception if the object is not in a
-  /// valid configuration. Otherwise, returns true.
-  ///
-  /// This is intended to be used as follows:
-  /// ```dart
-  ///   assert(myTextSpan.debugAssertValid());
-  /// ```
-  bool debugAssertValid() {
-    assert(() {
-      if (!visitTextSpan((TextSpan span) {
-        if (span.children != null) {
-          for (TextSpan child in span.children) {
-            if (child == null)
-              return false;
-          }
-        }
-        return true;
-      })) {
-        throw new FlutterError(
-          'TextSpan contains a null child.\n'
-          'A TextSpan object with a non-null child list should not have any nulls in its child list.\n'
-          'The full text in question was:\n'
-          '${toString("  ")}'
-        );
-      }
-      return true;
-    });
-    return true;
-  }
-
-  @override
-  bool operator ==(dynamic other) {
-    if (identical(this, other))
-      return true;
-    if (other is! TextSpan)
-      return false;
-    final TextSpan typedOther = other;
-    return typedOther.text == text
-        && typedOther.style == style
-        && typedOther.recognizer == recognizer
-        && _deepEquals(typedOther.children, children);
-  }
-
-  @override
-  int get hashCode => hashValues(style, text, recognizer, hashList(children));
-}
+final String _kZeroWidthSpace = new String.fromCharCode(0x200B);
 
 /// An object that paints a [TextSpan] tree into a [Canvas].
 ///
@@ -237,88 +22,215 @@ class TextSpan {
 /// 1. Create a [TextSpan] tree and pass it to the [TextPainter]
 ///    constructor.
 ///
-/// 2. Set the [maxWidth] property of the [TextPainter] to the width
-///    of the area into which the text should be painted.
+/// 2. Call [layout] to prepare the paragraph.
 ///
-/// 3. Call [layout] to prepare the paragraph.
-///
-/// 4. Call [paint] as often as desired to paint the paragraph.
+/// 3. Call [paint] as often as desired to paint the paragraph.
 ///
 /// If the width of the area into which the text is being painted
 /// changes, return to step 2. If the text to be painted changes,
 /// return to step 1.
+///
+/// The default text style is white. To change the color of the text,
+/// pass a [TextStyle] object to the [TextSpan] in `text`.
 class TextPainter {
   /// Creates a text painter that paints the given text.
   ///
-  /// The text argument is optional but [text] must be non-null before calling
-  /// [layout] or [layoutToMaxIntrinsicWidth].
-  TextPainter([ TextSpan text ]) {
-    this.text = text;
-  }
+  /// The `text` and `textDirection` arguments are optional but [text] and
+  /// [textDirection] must be non-null before calling [layout].
+  ///
+  /// The [textAlign] property must not be null.
+  ///
+  /// The [maxLines] property, if non-null, must be greater than zero.
+  TextPainter({
+    TextSpan text,
+    TextAlign textAlign: TextAlign.start,
+    TextDirection textDirection,
+    double textScaleFactor: 1.0,
+    int maxLines,
+    String ellipsis,
+  }) : assert(text == null || text.debugAssertIsValid()),
+       assert(textAlign != null),
+       assert(textScaleFactor != null),
+       assert(maxLines == null || maxLines > 0),
+       _text = text,
+       _textAlign = textAlign,
+       _textDirection = textDirection,
+       _textScaleFactor = textScaleFactor,
+       _maxLines = maxLines,
+       _ellipsis = ellipsis;
 
   ui.Paragraph _paragraph;
-  bool _needsLayout = false;
+  bool _needsLayout = true;
 
   /// The (potentially styled) text to paint.
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  ///
+  /// This and [textDirection] must be non-null before you call [layout].
   TextSpan get text => _text;
   TextSpan _text;
-  void set text(TextSpan value) {
-    assert(value == null || value.debugAssertValid());
+  set text(TextSpan value) {
+    assert(value == null || value.debugAssertIsValid());
     if (_text == value)
       return;
+    if (_text?.style != value?.style)
+      _layoutTemplate = null;
     _text = value;
-    if (_text != null) {
-      ui.ParagraphBuilder builder = new ui.ParagraphBuilder();
-      _text.build(builder);
-      _paragraph = builder.build(_text.style?.paragraphStyle ?? new ui.ParagraphStyle());
-      _needsLayout = true;
-    } else {
-      _paragraph = null;
-      _needsLayout = false;
+    _paragraph = null;
+    _needsLayout = true;
+  }
+
+  /// How the text should be aligned horizontally.
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  ///
+  /// The [textAlign] property must not be null. It defaults to [TextAlign.start].
+  TextAlign get textAlign => _textAlign;
+  TextAlign _textAlign;
+  set textAlign(TextAlign value) {
+    assert(value != null);
+    if (_textAlign == value)
+      return;
+    _textAlign = value;
+    _paragraph = null;
+    _needsLayout = true;
+  }
+
+  /// The default directionality of the text.
+  ///
+  /// This controls how the [TextAlign.start], [TextAlign.end], and
+  /// [TextAlign.justify] values of [textAlign] are resolved.
+  ///
+  /// This is also used to disambiguate how to render bidirectional text. For
+  /// example, if the [text] is an English phrase followed by a Hebrew phrase,
+  /// in a [TextDirection.ltr] context the English phrase will be on the left
+  /// and the Hebrew phrase to its right, while in a [TextDirection.rtl]
+  /// context, the English phrase will be on the right and the Hebrew phrase on
+  /// its left.
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  ///
+  /// This and [text] must be non-null before you call [layout].
+  TextDirection get textDirection => _textDirection;
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (_textDirection == value)
+      return;
+    _textDirection = value;
+    _paragraph = null;
+    _layoutTemplate = null; // Shouldn't really matter, but for strict correctness...
+    _needsLayout = true;
+  }
+
+  /// The number of font pixels for each logical pixel.
+  ///
+  /// For example, if the text scale factor is 1.5, text will be 50% larger than
+  /// the specified font size.
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  double get textScaleFactor => _textScaleFactor;
+  double _textScaleFactor;
+  set textScaleFactor(double value) {
+    assert(value != null);
+    if (_textScaleFactor == value)
+      return;
+    _textScaleFactor = value;
+    _paragraph = null;
+    _layoutTemplate = null;
+    _needsLayout = true;
+  }
+
+  /// The string used to ellipsize overflowing text. Setting this to a non-empty
+  /// string will cause this string to be substituted for the remaining text
+  /// if the text can not fit within the specified maximum width.
+  ///
+  /// Specifically, the ellipsis is applied to the last line before the line
+  /// truncated by [maxLines], if [maxLines] is non-null and that line overflows
+  /// the width constraint, or to the first line that is wider than the width
+  /// constraint, if [maxLines] is null. The width constraint is the `maxWidth`
+  /// passed to [layout].
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  ///
+  /// The higher layers of the system, such as the [Text] widget, represent
+  /// overflow effects using the [TextOverflow] enum. The
+  /// [TextOverflow.ellipsis] value corresponds to setting this property to
+  /// U+2026 HORIZONTAL ELLIPSIS (…).
+  String get ellipsis => _ellipsis;
+  String _ellipsis;
+  set ellipsis(String value) {
+    assert(value == null || value.isNotEmpty);
+    if (_ellipsis == value)
+      return;
+    _ellipsis = value;
+    _paragraph = null;
+    _needsLayout = true;
+  }
+
+  /// An optional maximum number of lines for the text to span, wrapping if
+  /// necessary.
+  ///
+  /// If the text exceeds the given number of lines, it is truncated such that
+  /// subsequent lines are dropped.
+  ///
+  /// After this is set, you must call [layout] before the next call to [paint].
+  int get maxLines => _maxLines;
+  int _maxLines;
+  /// The value may be null. If it is not null, then it must be greater than zero.
+  set maxLines(int value) {
+    assert(value == null || value > 0);
+    if (_maxLines == value)
+      return;
+    _maxLines = value;
+    _paragraph = null;
+    _needsLayout = true;
+  }
+
+  ui.Paragraph _layoutTemplate;
+
+  ui.ParagraphStyle _createParagraphStyle([TextDirection defaultTextDirection]) {
+    // The defaultTextDirection argument is used for preferredLineHeight in case
+    // textDirection hasn't yet been set.
+    assert(textAlign != null);
+    assert(textDirection != null || defaultTextDirection != null, 'TextPainter.textDirection must be set to a non-null value before using the TextPainter.');
+    return _text.style?.getParagraphStyle(
+      textAlign: textAlign,
+      textDirection: textDirection ?? defaultTextDirection,
+      textScaleFactor: textScaleFactor,
+      maxLines: _maxLines,
+      ellipsis: _ellipsis,
+    ) ?? new ui.ParagraphStyle(
+      textAlign: textAlign,
+      textDirection: textDirection ?? defaultTextDirection,
+      maxLines: maxLines,
+      ellipsis: ellipsis,
+    );
+  }
+
+  /// The height of a zero-width space in [text] in logical pixels.
+  ///
+  /// Not every line of text in [text] will have this height, but this height
+  /// is "typical" for text in [text] and useful for sizing other objects
+  /// relative a typical line of text.
+  ///
+  /// Obtaining this value does not require calling [layout].
+  ///
+  /// The style of the [text] property is used to determine the font settings
+  /// that contribute to the [preferredLineHeight]. If [text] is null or if it
+  /// specifies no styles, the default [TextStyle] values are used (a 10 pixel
+  /// sans-serif font).
+  double get preferredLineHeight {
+    if (_layoutTemplate == null) {
+      final ui.ParagraphBuilder builder = new ui.ParagraphBuilder(
+        _createParagraphStyle(TextDirection.rtl),
+      ); // direction doesn't matter, text is just a zero width space
+      if (text?.style != null)
+        builder.pushStyle(text.style.getTextStyle(textScaleFactor: textScaleFactor));
+      builder.addText(_kZeroWidthSpace);
+      _layoutTemplate = builder.build()
+        ..layout(new ui.ParagraphConstraints(width: double.INFINITY));
     }
-  }
-
-  /// The minimum width at which to layout the text.
-  ///
-  /// Requires [layout] to be called again before painting.
-  double get minWidth => _paragraph.minWidth;
-  void set minWidth(double value) {
-    if (_paragraph.minWidth == value)
-      return;
-    _paragraph.minWidth = value;
-    _needsLayout = true;
-  }
-
-  /// The maximum width at which to layout the text.
-  ///
-  /// Requires [layout] to be called again before painting.
-  double get maxWidth => _paragraph.maxWidth;
-  void set maxWidth(double value) {
-    if (_paragraph.maxWidth == value)
-      return;
-    _paragraph.maxWidth = value;
-    _needsLayout = true;
-  }
-
-  /// The minimum height at which to layout the text.
-  ///
-  /// Requires [layout] or [layoutToMaxIntrinsicWidth] to be called again before painting.
-  double get minHeight => _paragraph.minHeight;
-  void set minHeight(double value) {
-    if (_paragraph.minHeight == value)
-      return;
-    _paragraph.minHeight = value;
-    _needsLayout = true;
-  }
-
-  /// The maximum height at which to layout the text.
-  ///
-  /// Requires [layout] or [layoutToMaxIntrinsicWidth] to be called again before painting.
-  double get maxHeight => _paragraph.maxHeight;
-  void set maxHeight(double value) {
-    if (_paragraph.maxHeight == value)
-      return;
-    _paragraph.maxHeight = value;
+    return _layoutTemplate.height;
   }
 
   // Unfortunately, using full precision floating point here causes bad layouts
@@ -332,9 +244,10 @@ class TextPainter {
     return layoutValue.ceilToDouble();
   }
 
-  /// The width at which decreasing the width of the text would prevent it from painting itself completely within its bounds.
+  /// The width at which decreasing the width of the text would prevent it from
+  /// painting itself completely within its bounds.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   double get minIntrinsicWidth {
     assert(!_needsLayout);
     return _applyFloatingPointHack(_paragraph.minIntrinsicWidth);
@@ -342,7 +255,7 @@ class TextPainter {
 
   /// The width at which increasing the width of the text no longer decreases the height.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   double get maxIntrinsicWidth {
     assert(!_needsLayout);
     return _applyFloatingPointHack(_paragraph.maxIntrinsicWidth);
@@ -350,7 +263,7 @@ class TextPainter {
 
   /// The horizontal space required to paint this text.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   double get width {
     assert(!_needsLayout);
     return _applyFloatingPointHack(_paragraph.width);
@@ -358,7 +271,7 @@ class TextPainter {
 
   /// The vertical space required to paint this text.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   double get height {
     assert(!_needsLayout);
     return _applyFloatingPointHack(_paragraph.height);
@@ -366,59 +279,111 @@ class TextPainter {
 
   /// The amount of space required to paint this text.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   Size get size {
     assert(!_needsLayout);
     return new Size(width, height);
   }
 
-  /// Returns the distance from the top of the text to the first baseline of the given type.
-  ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
-  double computeDistanceToActualBaseline(TextBaseline baseline) {
-    assert(!_needsLayout);
+  // Workaround for https://github.com/flutter/flutter/issues/13303
+  double _workaroundBaselineBug(double value, TextBaseline baseline) {
+    if (value >= 0.0)
+      return value;
+
+    final ui.ParagraphBuilder builder = new ui.ParagraphBuilder(
+      _createParagraphStyle(TextDirection.ltr),
+    );
+    if (text?.style != null)
+      builder.pushStyle(text.style.getTextStyle(textScaleFactor: textScaleFactor));
+    builder.addText(_kZeroWidthSpace);
+    final ui.Paragraph paragraph = builder.build()
+      ..layout(new ui.ParagraphConstraints(width: double.INFINITY));
+
     switch (baseline) {
       case TextBaseline.alphabetic:
-        return _paragraph.alphabeticBaseline;
+        return paragraph.alphabeticBaseline;
       case TextBaseline.ideographic:
-        return _paragraph.ideographicBaseline;
+       return paragraph.ideographicBaseline;
     }
+    return null;
   }
 
-  bool _lastLayoutWasToMaxIntrinsicWidth = false;
+  /// Returns the distance from the top of the text to the first baseline of the
+  /// given type.
+  ///
+  /// Valid only after [layout] has been called.
+  double computeDistanceToActualBaseline(TextBaseline baseline) {
+    assert(!_needsLayout);
+    assert(baseline != null);
+    switch (baseline) {
+      case TextBaseline.alphabetic:
+        return _workaroundBaselineBug(_paragraph.alphabeticBaseline, baseline);
+      case TextBaseline.ideographic:
+       return _workaroundBaselineBug(_paragraph.ideographicBaseline, baseline);
+    }
+    return null;
+  }
+
+  /// Whether any text was truncated or ellipsized.
+  ///
+  /// If [maxLines] is not null, this is true if there were more lines to be
+  /// drawn than the given [maxLines], and thus at least one line was omitted in
+  /// the output; otherwise it is false.
+  ///
+  /// If [maxLines] is null, this is true if [ellipsis] is not the empty string
+  /// and there was a line that overflowed the `maxWidth` argument passed to
+  /// [layout]; otherwise it is false.
+  ///
+  /// Valid only after [layout] has been called.
+  bool get didExceedMaxLines {
+    assert(!_needsLayout);
+    return _paragraph.didExceedMaxLines;
+  }
+
+  double _lastMinWidth;
+  double _lastMaxWidth;
 
   /// Computes the visual position of the glyphs for painting the text.
-  void layout() {
-    if (!_needsLayout)
-      return;
-    _paragraph.layout();
-    _needsLayout = false;
-    _lastLayoutWasToMaxIntrinsicWidth = false;
-  }
-
-  /// Computes the visual position of the glyphs using the unconstrainted max intrinsic width.
   ///
-  /// Overwrites the previously configured [minWidth] and [maxWidth] values.
-  void layoutToMaxIntrinsicWidth() {
-    if (!_needsLayout && _lastLayoutWasToMaxIntrinsicWidth && width == maxIntrinsicWidth)
+  /// The text will layout with a width that's as close to its max intrinsic
+  /// width as possible while still being greater than or equal to `minWidth` and
+  /// less than or equal to `maxWidth`.
+  ///
+  /// The [text] and [textDirection] properties must be non-null before this is
+  /// called.
+  void layout({ double minWidth: 0.0, double maxWidth: double.INFINITY }) {
+    assert(text != null, 'TextPainter.text must be set to a non-null value before using the TextPainter.');
+    assert(textDirection != null, 'TextPainter.textDirection must be set to a non-null value before using the TextPainter.');
+    if (!_needsLayout && minWidth == _lastMinWidth && maxWidth == _lastMaxWidth)
       return;
     _needsLayout = false;
-    _lastLayoutWasToMaxIntrinsicWidth = true;
-    _paragraph
-      ..minWidth = 0.0
-      ..maxWidth = double.INFINITY
-      ..layout();
-    final double newMaxIntrinsicWidth = maxIntrinsicWidth;
-    _paragraph
-      ..minWidth = newMaxIntrinsicWidth
-      ..maxWidth = newMaxIntrinsicWidth
-      ..layout();
-    assert(width == maxIntrinsicWidth);
+    if (_paragraph == null) {
+      final ui.ParagraphBuilder builder = new ui.ParagraphBuilder(_createParagraphStyle());
+      _text.build(builder, textScaleFactor: textScaleFactor);
+      _paragraph = builder.build();
+    }
+    _lastMinWidth = minWidth;
+    _lastMaxWidth = maxWidth;
+    _paragraph.layout(new ui.ParagraphConstraints(width: maxWidth));
+    if (minWidth != maxWidth) {
+      final double newWidth = maxIntrinsicWidth.clamp(minWidth, maxWidth);
+      if (newWidth != width)
+        _paragraph.layout(new ui.ParagraphConstraints(width: newWidth));
+    }
   }
 
   /// Paints the text onto the given canvas at the given offset.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
+  ///
+  /// If you cannot see the text being painted, check that your text color does
+  /// not conflict with the background on which you are drawing. The default
+  /// text color is white (to contrast with the default black background color),
+  /// so if you are writing an application with a white background, the text
+  /// will not be visible by default.
+  ///
+  /// To set the text style, specify a [TextStyle] when creating the [TextSpan]
+  /// that you pass to the [TextPainter] constructor or to the [text] property.
   void paint(Canvas canvas, Offset offset) {
     assert(() {
       if (_needsLayout) {
@@ -428,48 +393,113 @@ class TextPainter {
         );
       }
       return true;
-    });
+    }());
     canvas.drawParagraph(_paragraph, offset);
   }
 
+  bool _isUtf16Surrogate(int value) {
+    return value & 0xF800 == 0xD800;
+  }
+
+  /// Returns the closest offset after `offset` at which the inout cursor can be
+  /// positioned.
+  int getOffsetAfter(int offset) {
+    final int nextCodeUnit = _text.codeUnitAt(offset);
+    if (nextCodeUnit == null)
+      return null;
+    // TODO(goderbauer): doesn't handle extended grapheme clusters with more than one Unicode scalar value (https://github.com/flutter/flutter/issues/13404).
+    return _isUtf16Surrogate(nextCodeUnit) ? offset + 2 : offset + 1;
+  }
+
+  /// Returns the closest offset before `offset` at which the inout cursor can
+  /// be positioned.
+  int getOffsetBefore(int offset) {
+    final int prevCodeUnit = _text.codeUnitAt(offset - 1);
+    if (prevCodeUnit == null)
+      return null;
+    // TODO(goderbauer): doesn't handle extended grapheme clusters with more than one Unicode scalar value (https://github.com/flutter/flutter/issues/13404).
+    return _isUtf16Surrogate(prevCodeUnit) ? offset - 2 : offset - 1;
+  }
+
   Offset _getOffsetFromUpstream(int offset, Rect caretPrototype) {
-    List<ui.TextBox> boxes = _paragraph.getBoxesForRange(offset - 1, offset);
+    final int prevCodeUnit = _text.codeUnitAt(offset - 1);
+    if (prevCodeUnit == null)
+      return null;
+    final int prevRuneOffset = _isUtf16Surrogate(prevCodeUnit) ? offset - 2 : offset - 1;
+    final List<TextBox> boxes = _paragraph.getBoxesForRange(prevRuneOffset, offset);
     if (boxes.isEmpty)
       return null;
-    ui.TextBox box = boxes[0];
-    double caretEnd = box.end;
-    double dx = box.direction == TextDirection.rtl ? caretEnd : caretEnd - caretPrototype.width;
-    return new Offset(dx, 0.0);
+    final TextBox box = boxes[0];
+    final double caretEnd = box.end;
+    final double dx = box.direction == TextDirection.rtl ? caretEnd : caretEnd - caretPrototype.width;
+    return new Offset(dx, box.top);
   }
 
   Offset _getOffsetFromDownstream(int offset, Rect caretPrototype) {
-    List<ui.TextBox> boxes = _paragraph.getBoxesForRange(offset, offset + 1);
+    final int nextCodeUnit = _text.codeUnitAt(offset);
+    if (nextCodeUnit == null)
+      return null;
+    final int nextRuneOffset = _isUtf16Surrogate(nextCodeUnit) ? offset + 2 : offset + 1;
+    final List<TextBox> boxes = _paragraph.getBoxesForRange(offset, nextRuneOffset);
     if (boxes.isEmpty)
       return null;
-    ui.TextBox box = boxes[0];
-    double caretStart = box.start;
-    double dx = box.direction == TextDirection.rtl ? caretStart - caretPrototype.width : caretStart;
-    return new Offset(dx, 0.0);
+    final TextBox box = boxes[0];
+    final double caretStart = box.start;
+    final double dx = box.direction == TextDirection.rtl ? caretStart - caretPrototype.width : caretStart;
+    return new Offset(dx, box.top);
+  }
+
+  Offset get _emptyOffset {
+    assert(!_needsLayout); // implies textDirection is non-null
+    assert(textAlign != null);
+    switch (textAlign) {
+      case TextAlign.left:
+        return Offset.zero;
+      case TextAlign.right:
+        return new Offset(width, 0.0);
+      case TextAlign.center:
+        return new Offset(width / 2.0, 0.0);
+      case TextAlign.justify:
+      case TextAlign.start:
+        assert(textDirection != null);
+        switch (textDirection) {
+          case TextDirection.rtl:
+            return new Offset(width, 0.0);
+          case TextDirection.ltr:
+            return Offset.zero;
+        }
+        return null;
+      case TextAlign.end:
+        assert(textDirection != null);
+        switch (textDirection) {
+          case TextDirection.rtl:
+            return Offset.zero;
+          case TextDirection.ltr:
+            return new Offset(width, 0.0);
+        }
+        return null;
+    }
+    return null;
   }
 
   /// Returns the offset at which to paint the caret.
   ///
-  /// Valid only after [layout] or [layoutToMaxIntrinsicWidth] has been called.
+  /// Valid only after [layout] has been called.
   Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
     assert(!_needsLayout);
-    int offset = position.offset;
-    // TODO(abarth): Handle the directionality of the text painter itself.
-    const Offset emptyOffset = Offset.zero;
+    final int offset = position.offset;
+    assert(position.affinity != null);
     switch (position.affinity) {
       case TextAffinity.upstream:
         return _getOffsetFromUpstream(offset, caretPrototype)
             ?? _getOffsetFromDownstream(offset, caretPrototype)
-            ?? emptyOffset;
+            ?? _emptyOffset;
       case TextAffinity.downstream:
         return _getOffsetFromDownstream(offset, caretPrototype)
             ?? _getOffsetFromUpstream(offset, caretPrototype)
-            ?? emptyOffset;
+            ?? _emptyOffset;
     }
+    return null;
   }
 
   /// Returns a list of rects that bound the given selection.
@@ -477,7 +507,7 @@ class TextPainter {
   /// A given selection might have more than one rect if this text painter
   /// contains bidirectional text because logically contiguous text might not be
   /// visually contiguous.
-  List<ui.TextBox> getBoxesForSelection(TextSelection selection) {
+  List<TextBox> getBoxesForSelection(TextSelection selection) {
     assert(!_needsLayout);
     return _paragraph.getBoxesForRange(selection.start, selection.end);
   }
@@ -488,4 +518,16 @@ class TextPainter {
     return _paragraph.getPositionForOffset(offset);
   }
 
+  /// Returns the text range of the word at the given offset. Characters not
+  /// part of a word, such as spaces, symbols, and punctuation, have word breaks
+  /// on both sides. In such cases, this method will return a text range that
+  /// contains the given text position.
+  ///
+  /// Word boundaries are defined more precisely in Unicode Standard Annex #29
+  /// <http://www.unicode.org/reports/tr29/#Word_Boundaries>.
+  TextRange getWordBoundary(TextPosition position) {
+    assert(!_needsLayout);
+    final List<int> indices = _paragraph.getWordBoundary(position.offset);
+    return new TextRange(start: indices[0], end: indices[1]);
+  }
 }

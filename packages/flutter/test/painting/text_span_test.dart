@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 import 'package:flutter/painting.dart';
-
+import 'package:flutter_test/flutter_test.dart' show nonconst;
 import 'package:test/test.dart';
 
 void main() {
-  test("TextSpan equals", () {
-    TextSpan a1 = new TextSpan(text: 'a');
-    TextSpan a2 = new TextSpan(text: 'a');
-    TextSpan b1 = new TextSpan(children: <TextSpan>[ a1 ]);
-    TextSpan b2 = new TextSpan(children: <TextSpan>[ a2 ]);
-    TextSpan c1 = new TextSpan();
-    TextSpan c2 = new TextSpan();
+  test('TextSpan equals', () {
+    final TextSpan a1 = new TextSpan(text: nonconst('a'));
+    final TextSpan a2 = new TextSpan(text: nonconst('a'));
+    final TextSpan b1 = new TextSpan(children: <TextSpan>[ a1 ]);
+    final TextSpan b2 = new TextSpan(children: <TextSpan>[ a2 ]);
+    final TextSpan c1 = new TextSpan(text: nonconst(null));
+    final TextSpan c2 = new TextSpan(text: nonconst(null));
 
     expect(a1 == a2, isTrue);
     expect(b1 == b2, isTrue);
@@ -28,26 +28,26 @@ void main() {
     expect(c1 == b2, isFalse);
   });
 
-  test("TextSpan ", () {
-    final TextSpan test = new TextSpan(
+  test('TextSpan toStringDeep', () {
+    const TextSpan test = const TextSpan(
       text: 'a',
-      style: new TextStyle(
-        fontSize: 10.0
+      style: const TextStyle(
+        fontSize: 10.0,
       ),
-      children: <TextSpan>[
-        new TextSpan(
+      children: const <TextSpan>[
+        const TextSpan(
           text: 'b',
-          children: <TextSpan>[
-            new TextSpan()
-          ]
+          children: const <TextSpan>[
+            const TextSpan(),
+          ],
         ),
         null,
-        new TextSpan(
-          text: 'c'
+        const TextSpan(
+          text: 'c',
         ),
-      ]
+      ],
     );
-    expect(test.toString(), equals(
+    expect(test.toStringDeep(), equals(
       'TextSpan:\n'
       '  inherit: true\n'
       '  size: 10.0\n'
@@ -56,7 +56,7 @@ void main() {
       '    "b"\n'
       '    TextSpan:\n'
       '      (empty)\n'
-      '  <null>\n'
+      '  <null child>\n'
       '  TextSpan:\n'
       '    "c"\n'
     ));

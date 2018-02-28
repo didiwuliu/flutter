@@ -11,6 +11,8 @@ void main() {
   );
 }
 
+enum ScrollMode { complex, tile }
+
 class ComplexLayoutApp extends StatefulWidget {
   @override
   ComplexLayoutAppState createState() => new ComplexLayoutAppState();
@@ -24,72 +26,101 @@ class ComplexLayoutAppState extends State<ComplexLayoutApp> {
     return new MaterialApp(
       theme: lightTheme ? new ThemeData.light() : new ThemeData.dark(),
       title: 'Advanced Layout',
-      home: new ComplexLayout()
-    );
+      home: scrollMode == ScrollMode.complex ? const ComplexLayout() : const TileScrollLayout());
   }
 
   bool _lightTheme = true;
   bool get lightTheme => _lightTheme;
-  void set lightTheme(bool value) {
+  set lightTheme(bool value) {
     setState(() {
       _lightTheme = value;
     });
   }
+
+  ScrollMode _scrollMode = ScrollMode.complex;
+  ScrollMode get scrollMode => _scrollMode;
+  set scrollMode(ScrollMode mode) {
+    setState(() {
+      _scrollMode = mode;
+    });
+  }
+
+  void toggleAnimationSpeed() {
+    setState(() {
+      timeDilation = (timeDilation != 1.0) ? 1.0 : 5.0;
+    });
+  }
+}
+
+class TileScrollLayout extends StatelessWidget {
+  const TileScrollLayout({ Key key }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return new Scaffold(
+      appBar: new AppBar(title: const Text('Tile Scrolling Layout')),
+      body: new ListView.builder(
+        key: const Key('tiles-scroll'),
+        itemCount: 200,
+        itemBuilder: (BuildContext context, int index) {
+          return new Padding(
+            padding: const EdgeInsets.all(5.0),
+            child: new Material(
+              elevation: (index % 5 + 1).toDouble(),
+              color: Colors.white,
+              child: new IconBar(),
+            ),
+          );
+        }
+      ),
+      drawer: const GalleryDrawer(),
+    );
+  }
 }
 
 class ComplexLayout extends StatefulWidget {
-  ComplexLayout({ Key key }) : super(key: key);
+  const ComplexLayout({ Key key }) : super(key: key);
 
   @override
   ComplexLayoutState createState() => new ComplexLayoutState();
 
   static ComplexLayoutState of(BuildContext context) => context.ancestorStateOfType(const TypeMatcher<ComplexLayoutState>());
-
-}
-
-class FancyItemDelegate extends LazyBlockDelegate {
-  @override
-  Widget buildItem(BuildContext context, int index) {
-    if (index % 2 == 0)
-      return new FancyImageItem(index, key: new Key("Item $index"));
-    else
-      return new FancyGalleryItem(index, key: new Key("Item $index"));
-  }
-
-  @override
-  bool shouldRebuild(FancyItemDelegate oldDelegate) => false;
 }
 
 class ComplexLayoutState extends State<ComplexLayout> {
   @override
   Widget build(BuildContext context) {
-
     return new Scaffold(
       appBar: new AppBar(
-        title: new Text('Advanced Layout'),
+        title: const Text('Advanced Layout'),
         actions: <Widget>[
           new IconButton(
-            icon: Icons.create,
+            icon: const Icon(Icons.create),
             tooltip: 'Search',
             onPressed: () {
-              print("Pressed search");
-            }
+              print('Pressed search');
+            },
           ),
           new TopBarMenu()
         ]
       ),
       body: new Column(
         children: <Widget>[
-          new Flexible(
-            child: new LazyBlock(
-              key: new Key("main-scroll"),
-              delegate: new FancyItemDelegate()
+          new Expanded(
+            child: new ListView.builder(
+              key: const Key('complex-scroll'), // this key is used by the driver test
+              itemBuilder: (BuildContext context, int index) {
+                if (index % 2 == 0)
+                  return new FancyImageItem(index, key: new PageStorageKey<int>(index));
+                else
+                  return new FancyGalleryItem(index, key: new PageStorageKey<int>(index));
+              },
             )
           ),
-          new BottomBar()
-        ]
+          new BottomBar(),
+        ],
       ),
-      drawer: new GalleryDrawer()
+      drawer: const GalleryDrawer(),
     );
   }
 }
@@ -98,47 +129,47 @@ class TopBarMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new PopupMenuButton<String>(
-      onSelected: (String value) { print("Selected: $value"); },
+      onSelected: (String value) { print('Selected: $value'); },
       itemBuilder: (BuildContext context) => <PopupMenuItem<String>>[
-        new PopupMenuItem<String>(
-          value: "Friends",
-          child: new MenuItemWithIcon(Icons.people, "Friends", "5 new")
+        const PopupMenuItem<String>(
+          value: 'Friends',
+          child: const MenuItemWithIcon(Icons.people, 'Friends', '5 new')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.event, "Events", "12 upcoming")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.event, 'Events', '12 upcoming')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.group, "Groups", "14")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.group, 'Groups', '14')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.image, "Pictures", "12")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.image, 'Pictures', '12')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.near_me, "Nearby", "33")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.near_me, 'Nearby', '33')
         ),
-        new PopupMenuItem<String>(
-          value: "Friends",
-          child: new MenuItemWithIcon(Icons.people, "Friends", "5")
+        const PopupMenuItem<String>(
+          value: 'Friends',
+          child: const MenuItemWithIcon(Icons.people, 'Friends', '5')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.event, "Events", "12")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.event, 'Events', '12')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.group, "Groups", "14")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.group, 'Groups', '14')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.image, "Pictures", "12")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.image, 'Pictures', '12')
         ),
-        new PopupMenuItem<String>(
-          value: "Events",
-          child: new MenuItemWithIcon(Icons.near_me, "Nearby", "33")
+        const PopupMenuItem<String>(
+          value: 'Events',
+          child: const MenuItemWithIcon(Icons.near_me, 'Nearby', '33')
         )
       ]
     );
@@ -146,7 +177,7 @@ class TopBarMenu extends StatelessWidget {
 }
 
 class MenuItemWithIcon extends StatelessWidget {
-  MenuItemWithIcon(this.icon, this.title, this.subtitle);
+  const MenuItemWithIcon(this.icon, this.title, this.subtitle);
 
   final IconData icon;
   final String title;
@@ -156,9 +187,9 @@ class MenuItemWithIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return new Row(
       children: <Widget>[
-        new Icon(icon: icon),
+        new Icon(icon),
         new Padding(
-          padding: new EdgeInsets.only(left: 8.0, right: 8.0),
+          padding: const EdgeInsets.only(left: 8.0, right: 8.0),
           child: new Text(title)
         ),
         new Text(subtitle, style: Theme.of(context).textTheme.caption)
@@ -168,21 +199,21 @@ class MenuItemWithIcon extends StatelessWidget {
 }
 
 class FancyImageItem extends StatelessWidget {
-  FancyImageItem(this.index, {Key key}) : super(key: key);
+  const FancyImageItem(this.index, {Key key}) : super(key: key);
 
   final int index;
 
   @override
   Widget build(BuildContext context) {
-    return new BlockBody(
+    return new ListBody(
       children: <Widget>[
-        new UserHeader("Ali Connors $index"),
+        new UserHeader('Ali Connors $index'),
         new ItemDescription(),
         new ItemImageBox(),
         new InfoBar(),
-        new Padding(
-          padding: new EdgeInsets.symmetric(horizontal: 8.0),
-          child: new Divider()
+        const Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: const Divider()
         ),
         new IconBar(),
         new FatDivider()
@@ -192,19 +223,19 @@ class FancyImageItem extends StatelessWidget {
 }
 
 class FancyGalleryItem extends StatelessWidget {
-  FancyGalleryItem(this.index, {Key key}) : super(key: key);
+  const FancyGalleryItem(this.index, {Key key}) : super(key: key);
 
   final int index;
   @override
   Widget build(BuildContext context) {
-    return new BlockBody(
+    return new ListBody(
       children: <Widget>[
-        new UserHeader("Ali Connors"),
+        const UserHeader('Ali Connors'),
         new ItemGalleryBox(index),
         new InfoBar(),
-        new Padding(
-          padding: new EdgeInsets.symmetric(horizontal: 8.0),
-          child: new Divider()
+        const Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: const Divider()
         ),
         new IconBar(),
         new FatDivider()
@@ -217,12 +248,12 @@ class InfoBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Padding(
-      padding: new EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       child: new Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          new MiniIconWithText(Icons.thumb_up, "42"),
-          new Text("3 Comments", style: Theme.of(context).textTheme.caption)
+          const MiniIconWithText(Icons.thumb_up, '42'),
+          new Text('3 Comments', style: Theme.of(context).textTheme.caption)
         ]
       )
     );
@@ -233,13 +264,13 @@ class IconBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Padding(
-      padding: new EdgeInsets.only(left: 16.0, right: 16.0),
+      padding: const EdgeInsets.only(left: 16.0, right: 16.0),
       child: new Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          new IconWithText(Icons.thumb_up, "Like"),
-          new IconWithText(Icons.comment, "Comment"),
-          new IconWithText(Icons.share, "Share"),
+        children: const <Widget>[
+          const IconWithText(Icons.thumb_up, 'Like'),
+          const IconWithText(Icons.comment, 'Comment'),
+          const IconWithText(Icons.share, 'Share'),
         ]
       )
     );
@@ -247,7 +278,7 @@ class IconBar extends StatelessWidget {
 }
 
 class IconWithText extends StatelessWidget {
-  IconWithText(this.icon, this.title);
+  const IconWithText(this.icon, this.title);
 
   final IconData icon;
   final String title;
@@ -255,9 +286,12 @@ class IconWithText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Row(
-      mainAxisAlignment: MainAxisAlignment.collapse,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        new IconButton(icon: icon, onPressed: () { print("Pressed $title button"); } ),
+        new IconButton(
+          icon: new Icon(icon),
+          onPressed: () { print('Pressed $title button'); }
+        ),
         new Text(title)
       ]
     );
@@ -265,7 +299,7 @@ class IconWithText extends StatelessWidget {
 }
 
 class MiniIconWithText extends StatelessWidget {
-  MiniIconWithText(this.icon, this.title);
+  const MiniIconWithText(this.icon, this.title);
 
   final IconData icon;
   final String title;
@@ -273,18 +307,18 @@ class MiniIconWithText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Row(
-      mainAxisAlignment: MainAxisAlignment.collapse,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         new Padding(
-          padding: new EdgeInsets.only(right: 8.0),
+          padding: const EdgeInsets.only(right: 8.0),
           child: new Container(
             width: 16.0,
             height: 16.0,
             decoration: new BoxDecoration(
-              backgroundColor: Theme.of(context).primaryColor,
+              color: Theme.of(context).primaryColor,
               shape: BoxShape.circle
             ),
-            child: new Icon(icon: icon, color: Colors.white, size: 12.0)
+            child: new Icon(icon, color: Colors.white, size: 12.0)
           )
         ),
         new Text(title, style: Theme.of(context).textTheme.caption)
@@ -298,34 +332,32 @@ class FatDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return new Container(
       height: 8.0,
-      decoration: new BoxDecoration(
-        backgroundColor: Theme.of(context).dividerColor
-      )
+      color: Theme.of(context).dividerColor,
     );
   }
 }
 
 class UserHeader extends StatelessWidget {
-  UserHeader(this.userName);
+  const UserHeader(this.userName);
 
   final String userName;
 
   @override
   Widget build(BuildContext context) {
     return new Padding(
-      padding: new EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       child: new Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          new Padding(
-            padding: new EdgeInsets.only(right: 8.0),
-            child: new AssetImage(
-              name: "packages/flutter_gallery_assets/ali_connors_sml.png",
+          const Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: const Image(
+              image: const AssetImage('packages/flutter_gallery_assets/ali_connors_sml.png'),
               width: 32.0,
               height: 32.0
             )
           ),
-          new Flexible(
+          new Expanded(
             child: new Column(
               mainAxisAlignment: MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -333,15 +365,15 @@ class UserHeader extends StatelessWidget {
                 new RichText(text: new TextSpan(
                   style: Theme.of(context).textTheme.body1,
                   children: <TextSpan>[
-                    new TextSpan(text: userName, style: new TextStyle(fontWeight: FontWeight.bold)),
-                    new TextSpan(text: " shared a new "),
-                    new TextSpan(text: "photo", style: new TextStyle(fontWeight: FontWeight.bold))
+                    new TextSpan(text: userName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const TextSpan(text: ' shared a new '),
+                    const TextSpan(text: 'photo', style: const TextStyle(fontWeight: FontWeight.bold))
                   ]
                 )),
                 new Row(
                   children: <Widget>[
-                    new Text("Yesterday at 11:55 • ", style: Theme.of(context).textTheme.caption),
-                    new Icon(icon: Icons.people, size: 16.0, color: Theme.of(context).textTheme.caption.color)
+                    new Text('Yesterday at 11:55 • ', style: Theme.of(context).textTheme.caption),
+                    new Icon(Icons.people, size: 16.0, color: Theme.of(context).textTheme.caption.color)
                   ]
                 )
               ]
@@ -357,9 +389,9 @@ class UserHeader extends StatelessWidget {
 class ItemDescription extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return new Padding(
-      padding: new EdgeInsets.all(8.0),
-      child: new Text("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.")
+    return const Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: const Text('Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.')
     );
   }
 }
@@ -368,17 +400,17 @@ class ItemImageBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Padding(
-      padding: new EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       child: new Card(
         child: new Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             new Stack(
               children: <Widget>[
-                new SizedBox(
+                const SizedBox(
                   height: 230.0,
-                  child: new AssetImage(
-                    name: "packages/flutter_gallery_assets/top_10_australian_beaches.png"
+                  child: const Image(
+                    image: const AssetImage('packages/flutter_gallery_assets/top_10_australian_beaches.png')
                   )
                 ),
                 new Theme(
@@ -386,8 +418,14 @@ class ItemImageBox extends StatelessWidget {
                   child: new Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
-                      new IconButton(icon: Icons.edit, onPressed: () { print("Pressed edit button"); }),
-                      new IconButton(icon: Icons.zoom_in, onPressed: () { print("Pressed zoom button"); })
+                      new IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () { print('Pressed edit button'); }
+                      ),
+                      new IconButton(
+                        icon: const Icon(Icons.zoom_in),
+                        onPressed: () { print('Pressed zoom button'); }
+                      ),
                     ]
                   )
                 ),
@@ -396,20 +434,20 @@ class ItemImageBox extends StatelessWidget {
                   left: 4.0,
                   child: new Container(
                     decoration: new BoxDecoration(
-                      backgroundColor: Colors.black54,
-                      borderRadius: 2.0
+                      color: Colors.black54,
+                      borderRadius: new BorderRadius.circular(2.0)
                     ),
-                    padding: new EdgeInsets.all(4.0),
-                    child: new RichText(
-                      text: new TextSpan(
-                        style: new TextStyle(color: Colors.white),
-                        children: <TextSpan>[
-                          new TextSpan(
-                            text: "Photo by "
+                    padding: const EdgeInsets.all(4.0),
+                    child: const RichText(
+                      text: const TextSpan(
+                        style: const TextStyle(color: Colors.white),
+                        children: const <TextSpan>[
+                          const TextSpan(
+                            text: 'Photo by '
                           ),
-                          new TextSpan(
-                            style: new TextStyle(fontWeight: FontWeight.bold),
-                            text: "Magic Mike"
+                          const TextSpan(
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            text: 'Magic Mike'
                           )
                         ]
                       )
@@ -420,13 +458,13 @@ class ItemImageBox extends StatelessWidget {
             )
             ,
             new Padding(
-              padding: new EdgeInsets.all(8.0),
+              padding: const EdgeInsets.all(8.0),
               child: new Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  new Text("Where can you find that amazing sunset?", style: Theme.of(context).textTheme.body2),
-                  new Text("The sun sets over stinson beach", style: Theme.of(context).textTheme.body1),
-                  new Text("flutter.io/amazingsunsets", style: Theme.of(context).textTheme.caption)
+                  new Text('Where can you find that amazing sunset?', style: Theme.of(context).textTheme.body2),
+                  new Text('The sun sets over stinson beach', style: Theme.of(context).textTheme.body1),
+                  new Text('flutter.io/amazingsunsets', style: Theme.of(context).textTheme.caption)
                 ]
               )
             )
@@ -438,56 +476,54 @@ class ItemImageBox extends StatelessWidget {
 }
 
 class ItemGalleryBox extends StatelessWidget {
-  ItemGalleryBox(this.index);
+  const ItemGalleryBox(this.index);
 
   final int index;
 
   @override
   Widget build(BuildContext context) {
-    List<String> tabNames = <String>[
-      "A", "B", "C", "D"
+    final List<String> tabNames = <String>[
+      'A', 'B', 'C', 'D'
     ];
 
     return new SizedBox(
       height: 200.0,
-      child: new TabBarSelection<String>(
-        values: tabNames,
+      child: new DefaultTabController(
+        length: tabNames.length,
         child: new Column(
           children: <Widget>[
-            new Flexible(
-              child: new TabBarView<String>(
+            new Expanded(
+              child: new TabBarView(
                 children: tabNames.map((String tabName) {
                   return new Container(
-                    key: new Key("Tab $index - $tabName"),
+                    key: new PageStorageKey<String>(tabName),
                     child: new Padding(
-                      padding: new EdgeInsets.all(8.0),
+                      padding: const EdgeInsets.all(8.0),
                       child: new Card(
                         child: new Column(
                           children: <Widget>[
-                            new Flexible(
+                            new Expanded(
                               child: new Container(
-                                decoration: new BoxDecoration(
-                                  backgroundColor: Theme.of(context).primaryColor
-                                ),
+                                color: Theme.of(context).primaryColor,
                                 child: new Center(
-                                  child: new Text(tabName, style: Theme.of(context).textTheme.headline.copyWith(color: Colors.white))
+                                  child: new Text(tabName, style: Theme.of(context).textTheme.headline.copyWith(color: Colors.white)),
                                 )
                               )
                             ),
                             new Row(
                               children: <Widget>[
                                 new IconButton(
-                                  icon: Icons.share,
-                                  onPressed: () { print("Pressed share"); }
+                                  icon: const Icon(Icons.share),
+                                  onPressed: () { print('Pressed share'); },
                                 ),
                                 new IconButton(
-                                  icon: Icons.event,
-                                  onPressed: () { print("Pressed event"); }
+                                  icon: const Icon(Icons.event),
+                                  onPressed: () { print('Pressed event'); },
                                 ),
-                                new Flexible(
+                                new Expanded(
                                   child: new Padding(
-                                    padding: new EdgeInsets.only(left: 8.0),
-                                    child: new Text("This is item $tabName")
+                                    padding: const EdgeInsets.only(left: 8.0),
+                                    child: new Text('This is item $tabName'),
                                   )
                                 )
                               ]
@@ -501,7 +537,7 @@ class ItemGalleryBox extends StatelessWidget {
               )
             ),
             new Container(
-              child: new TabPageSelector<String>()
+              child: const TabPageSelector()
             )
           ]
         )
@@ -524,20 +560,20 @@ class BottomBar extends StatelessWidget {
       ),
       child: new Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          new BottomBarButton(Icons.new_releases, "News"),
-          new BottomBarButton(Icons.people, "Requests"),
-          new BottomBarButton(Icons.chat, "Messenger"),
-          new BottomBarButton(Icons.bookmark, "Bookmark"),
-          new BottomBarButton(Icons.alarm, "Alarm")
-        ]
-      )
+        children: const <Widget>[
+          const BottomBarButton(Icons.new_releases, 'News'),
+          const BottomBarButton(Icons.people, 'Requests'),
+          const BottomBarButton(Icons.chat, 'Messenger'),
+          const BottomBarButton(Icons.bookmark, 'Bookmark'),
+          const BottomBarButton(Icons.alarm, 'Alarm'),
+        ],
+      ),
     );
   }
 }
 
 class BottomBarButton extends StatelessWidget {
-  BottomBarButton(this.icon, this.title);
+  const BottomBarButton(this.icon, this.title);
 
   final IconData icon;
   final String title;
@@ -545,12 +581,12 @@ class BottomBarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Padding(
-      padding: new EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(8.0),
       child: new Column(
         children: <Widget>[
           new IconButton(
-            icon: icon,
-            onPressed: () { print("Pressed: $title"); }
+            icon: new Icon(icon),
+            onPressed: () { print('Pressed: $title'); }
           ),
           new Text(title, style: Theme.of(context).textTheme.caption)
         ]
@@ -560,71 +596,68 @@ class BottomBarButton extends StatelessWidget {
 }
 
 class GalleryDrawer extends StatelessWidget {
-  GalleryDrawer({ Key key }) : super(key: key);
+  const GalleryDrawer({ Key key }) : super(key: key);
 
   void _changeTheme(BuildContext context, bool value) {
     ComplexLayoutApp.of(context).lightTheme = value;
   }
 
-  void _toggleAnimationSpeed(BuildContext context) {
-    ComplexLayoutApp.of(context).setState(() {
-      timeDilation = (timeDilation != 1.0) ? 1.0 : 5.0;
-    });
+  void _changeScrollMode(BuildContext context, ScrollMode mode) {
+    ComplexLayoutApp.of(context).scrollMode = mode;
   }
 
   @override
   Widget build(BuildContext context) {
+    final ScrollMode currentMode = ComplexLayoutApp.of(context).scrollMode;
     return new Drawer(
-      child: new Block(
+      // Note: for real apps, see the Gallery material Drawer demo. More
+      // typically, a drawer would have a fixed header with a scrolling body
+      // below it.
+      child: new ListView(
+        key: const PageStorageKey<String>('gallery-drawer'),
+        padding: EdgeInsets.zero,
         children: <Widget>[
           new FancyDrawerHeader(),
-          new DrawerItem(
-            icon: Icons.brightness_5,
-            onPressed: () { _changeTheme(context, true); },
+          new ListTile(
+            key: const Key('scroll-switcher'),
+            onTap: () { _changeScrollMode(context, currentMode == ScrollMode.complex ? ScrollMode.tile : ScrollMode.complex); },
+            trailing: new Text(currentMode == ScrollMode.complex ? 'Tile' : 'Complex')
+          ),
+          new ListTile(
+            leading: const Icon(Icons.brightness_5),
+            title: const Text('Light'),
+            onTap: () { _changeTheme(context, true); },
             selected: ComplexLayoutApp.of(context).lightTheme,
-            child: new Row(
-              children: <Widget>[
-                new Flexible(child: new Text('Light')),
-                new Radio<bool>(
-                  value: true,
-                  groupValue: ComplexLayoutApp.of(context).lightTheme,
-                  onChanged: (bool value) { _changeTheme(context, value); }
-                )
-              ]
-            )
+            trailing: new Radio<bool>(
+              value: true,
+              groupValue: ComplexLayoutApp.of(context).lightTheme,
+              onChanged: (bool value) { _changeTheme(context, value); }
+            ),
           ),
-          new DrawerItem(
-            icon: Icons.brightness_7,
-            onPressed: () { _changeTheme(context, false); },
+          new ListTile(
+            leading: const Icon(Icons.brightness_7),
+            title: const Text('Dark'),
+            onTap: () { _changeTheme(context, false); },
             selected: !ComplexLayoutApp.of(context).lightTheme,
-            child: new Row(
-              children: <Widget>[
-                new Flexible(child: new Text('Dark')),
-                new Radio<bool>(
-                  value: false,
-                  groupValue: ComplexLayoutApp.of(context).lightTheme,
-                  onChanged: (bool value) { _changeTheme(context, value); }
-                )
-              ]
-            )
+            trailing: new Radio<bool>(
+              value: false,
+              groupValue: ComplexLayoutApp.of(context).lightTheme,
+              onChanged: (bool value) { _changeTheme(context, value); },
+            ),
           ),
-          new Divider(),
-          new DrawerItem(
-            icon: Icons.hourglass_empty,
+          const Divider(),
+          new ListTile(
+            leading: const Icon(Icons.hourglass_empty),
+            title: const Text('Animate Slowly'),
             selected: timeDilation != 1.0,
-            onPressed: () { _toggleAnimationSpeed(context); },
-            child: new Row(
-              children: <Widget>[
-                new Flexible(child: new Text('Animate Slowly')),
-                new Checkbox(
-                  value: timeDilation != 1.0,
-                  onChanged: (bool value) { _toggleAnimationSpeed(context); }
-                )
-              ]
-            )
-          )
-        ]
-      )
+            onTap: () { ComplexLayoutApp.of(context).toggleAnimationSpeed(); },
+            trailing: new Checkbox(
+              value: timeDilation != 1.0,
+              onChanged: (bool value) { ComplexLayoutApp.of(context).toggleAnimationSpeed(); }
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -633,10 +666,12 @@ class FancyDrawerHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return new Container(
-      decoration: new BoxDecoration(
-        backgroundColor: Colors.purple[500]
+      color: Colors.purple,
+      height: 200.0,
+      child: const SafeArea(
+        bottom: false,
+        child: const Placeholder(),
       ),
-      height: 200.0
     );
   }
 }

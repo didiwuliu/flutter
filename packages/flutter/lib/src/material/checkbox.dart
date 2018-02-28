@@ -4,6 +4,7 @@
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -12,7 +13,7 @@ import 'debug.dart';
 import 'theme.dart';
 import 'toggleable.dart';
 
-/// A material design checkbox
+/// A material design checkbox.
 ///
 /// The checkbox itself does not maintain any state. Instead, when the state of
 /// the checkbox changes, the widget calls the [onChanged] callback. Most
@@ -20,16 +21,22 @@ import 'toggleable.dart';
 /// rebuild the checkbox with a new [value] to update the visual appearance of
 /// the checkbox.
 ///
+/// The checkbox can optionally display three values - true, false, and null -
+/// if [tristate] is true. When [value] is null a dash is displayed. By default
+/// [tristate] is false and the checkbox's [value] must be true or false.
+///
 /// Requires one of its ancestors to be a [Material] widget.
 ///
 /// See also:
 ///
-///  * [Radio]
-///  * [Switch]
-///  * [Slider]
-///  * <https://www.google.com/design/spec/components/selection-controls.html#selection-controls-checkbox>
-///  * <https://www.google.com/design/spec/components/lists-controls.html#lists-controls-types-of-list-controls>
-class Checkbox extends StatelessWidget {
+///  * [CheckboxListTile], which combines this widget with a [ListTile] so that
+///    you can give the checkbox a label.
+///  * [Switch], a widget with semantics similar to [Checkbox].
+///  * [Radio], for selecting among a set of explicit values.
+///  * [Slider], for selecting a value in a range.
+///  * <https://material.google.com/components/selection-controls.html#selection-controls-checkbox>
+///  * <https://material.google.com/components/lists-controls.html#lists-controls-types-of-list-controls>
+class Checkbox extends StatefulWidget {
   /// Creates a material design checkbox.
   ///
   /// The checkbox itself does not maintain any state. Instead, when the state of
@@ -38,22 +45,28 @@ class Checkbox extends StatelessWidget {
   /// rebuild the checkbox with a new [value] to update the visual appearance of
   /// the checkbox.
   ///
-  /// * [value] determines whether the checkbox is checked.
-  /// * [onChanged] is called when the value of the checkbox should change.
-  Checkbox({
+  /// The following arguments are required:
+  ///
+  /// * [value], which determines whether the checkbox is checked. The [value]
+  ///   can only be be null if [tristate] is true.
+  /// * [onChanged], which is called when the value of the checkbox should
+  ///   change. It can be set to null to disable the checkbox.
+  ///
+  /// The value of [tristate] must not be null.
+  const Checkbox({
     Key key,
-    this.value,
+    @required this.value,
+    this.tristate: false,
+    @required this.onChanged,
     this.activeColor,
-    this.onChanged
-  }) : super(key: key);
+  }) : assert(tristate != null),
+       assert(tristate || value != null),
+       super(key: key);
 
   /// Whether this checkbox is checked.
-  final bool value;
-
-  /// The color to use when this checkbox is checked.
   ///
-  /// Defaults to accent color of the current [Theme].
-  final Color activeColor;
+  /// This property must not be null.
+  final bool value;
 
   /// Called when the value of the checkbox should change.
   ///
@@ -61,128 +74,266 @@ class Checkbox extends StatelessWidget {
   /// change state until the parent widget rebuilds the checkbox with the new
   /// value.
   ///
-  /// If null, the checkbox will be displayed as disabled.
+  /// If this callback is null, the checkbox will be displayed as disabled
+  /// and will not respond to input gestures.
+  ///
+  /// When the checkbox is tapped, if [tristate] is false (the default) then
+  /// the [onChanged] callback will be applied to `!value`. If [tristate] is
+  /// true this callback cycle from false to true to null.
+  ///
+  /// The callback provided to [onChanged] should update the state of the parent
+  /// [StatefulWidget] using the [State.setState] method, so that the parent
+  /// gets rebuilt; for example:
+  ///
+  /// ```dart
+  /// new Checkbox(
+  ///   value: _throwShotAway,
+  ///   onChanged: (bool newValue) {
+  ///     setState(() {
+  ///       _throwShotAway = newValue;
+  ///     });
+  ///   },
+  /// )
+  /// ```
   final ValueChanged<bool> onChanged;
+
+  /// The color to use when this checkbox is checked.
+  ///
+  /// Defaults to accent color of the current [Theme].
+  final Color activeColor;
+
+  /// If true the checkbox's [value] can be true, false, or null.
+  ///
+  /// Checkbox displays a dash when its value is null.
+  ///
+  /// When a tri-state checkbox is tapped its [onChanged] callback will be
+  /// applied to true if the current value is null or false, false otherwise.
+  /// Typically tri-state checkboxes are disabled (the onChanged callback is
+  /// null) so they don't respond to taps.
+  ///
+  /// If tristate is false (the default), [value] must not be null.
+  final bool tristate;
 
   /// The width of a checkbox widget.
   static const double width = 18.0;
 
   @override
+  _CheckboxState createState() => new _CheckboxState();
+}
+
+class _CheckboxState extends State<Checkbox> with TickerProviderStateMixin {
+  @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMaterial(context));
-    ThemeData themeData = Theme.of(context);
+    final ThemeData themeData = Theme.of(context);
     return new _CheckboxRenderObjectWidget(
-      value: value,
-      activeColor: activeColor ?? themeData.accentColor,
-      inactiveColor: onChanged != null ? themeData.unselectedWidgetColor : themeData.disabledColor,
-      onChanged: onChanged
+      value: widget.value,
+      tristate: widget.tristate,
+      activeColor: widget.activeColor ?? themeData.accentColor,
+      inactiveColor: widget.onChanged != null ? themeData.unselectedWidgetColor : themeData.disabledColor,
+      onChanged: widget.onChanged,
+      vsync: this,
     );
   }
 }
 
 class _CheckboxRenderObjectWidget extends LeafRenderObjectWidget {
-  _CheckboxRenderObjectWidget({
+  const _CheckboxRenderObjectWidget({
     Key key,
-    this.value,
-    this.activeColor,
-    this.inactiveColor,
-    this.onChanged
-  }) : super(key: key) {
-    assert(value != null);
-    assert(activeColor != null);
-    assert(inactiveColor != null);
-  }
+    @required this.value,
+    @required this.tristate,
+    @required this.activeColor,
+    @required this.inactiveColor,
+    @required this.onChanged,
+    @required this.vsync,
+  }) : assert(tristate != null),
+       assert(tristate || value != null),
+       assert(activeColor != null),
+       assert(inactiveColor != null),
+       assert(vsync != null),
+       super(key: key);
 
   final bool value;
+  final bool tristate;
   final Color activeColor;
   final Color inactiveColor;
   final ValueChanged<bool> onChanged;
+  final TickerProvider vsync;
 
   @override
   _RenderCheckbox createRenderObject(BuildContext context) => new _RenderCheckbox(
     value: value,
+    tristate: tristate,
     activeColor: activeColor,
     inactiveColor: inactiveColor,
-    onChanged: onChanged
+    onChanged: onChanged,
+    vsync: vsync,
   );
 
   @override
   void updateRenderObject(BuildContext context, _RenderCheckbox renderObject) {
     renderObject
       ..value = value
+      ..tristate = tristate
       ..activeColor = activeColor
       ..inactiveColor = inactiveColor
-      ..onChanged = onChanged;
+      ..onChanged = onChanged
+      ..vsync = vsync;
   }
 }
 
-const double _kMidpoint = 0.5;
 const double _kEdgeSize = Checkbox.width;
-const double _kEdgeRadius = 1.0;
+const Radius _kEdgeRadius = const Radius.circular(1.0);
 const double _kStrokeWidth = 2.0;
 
 class _RenderCheckbox extends RenderToggleable {
   _RenderCheckbox({
     bool value,
+    bool tristate,
     Color activeColor,
     Color inactiveColor,
-    ValueChanged<bool> onChanged
-  }): super(
-    value: value,
-    activeColor: activeColor,
-    inactiveColor: inactiveColor,
-    onChanged: onChanged,
-    size: const Size(2 * kRadialReactionRadius, 2 * kRadialReactionRadius)
-  );
+    ValueChanged<bool> onChanged,
+    @required TickerProvider vsync,
+  }): _oldValue = value,
+      super(
+        value: value,
+        tristate: tristate,
+        activeColor: activeColor,
+        inactiveColor: inactiveColor,
+        onChanged: onChanged,
+        size: const Size(2 * kRadialReactionRadius, 2 * kRadialReactionRadius),
+        vsync: vsync,
+      );
+
+  bool _oldValue;
+
+  @override
+  set value(bool newValue) {
+    if (newValue == value)
+      return;
+    _oldValue = value;
+    super.value = newValue;
+  }
+
+  // The square outer bounds of the checkbox at t, with the specified origin.
+  // At t == 0.0, the outer rect's size is _kEdgeSize (Checkbox.width)
+  // At t == 0.5, .. is _kEdgeSize - _kStrokeWidth
+  // At t == 1.0, .. is _kEdgeSize
+  RRect _outerRectAt(Offset origin, double t) {
+    final double inset = 1.0 - (t - 0.5).abs() * 2.0;
+    final double size = _kEdgeSize - inset * _kStrokeWidth;
+    final Rect rect = new Rect.fromLTWH(origin.dx + inset, origin.dy + inset, size, size);
+    return new RRect.fromRectAndRadius(rect, _kEdgeRadius);
+  }
+
+  // The checkbox's border color if value == false, or its fill color when
+  // value == true or null.
+  Color _colorAt(double t) {
+    // As t goes from 0.0 to 0.25, animate from the inactiveColor to activeColor.
+    return onChanged == null
+      ? inactiveColor
+      : (t >= 0.25 ? activeColor : Color.lerp(inactiveColor, activeColor, t * 4.0));
+  }
+
+  // White stroke used to paint the check and dash.
+  void _initStrokePaint(Paint paint) {
+    paint
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _kStrokeWidth;
+  }
+
+  void _drawBorder(Canvas canvas, RRect outer, double t, Paint paint) {
+    assert(t >= 0.0 && t <= 0.5);
+    final double size = outer.width;
+    // As t goes from 0.0 to 1.0, gradually fill the outer RRect.
+    final RRect inner = outer.deflate(math.min(size / 2.0, _kStrokeWidth + size * t));
+    canvas.drawDRRect(outer, inner, paint);
+  }
+
+  void _drawCheck(Canvas canvas, Offset origin, double t, Paint paint) {
+    assert(t >= 0.0 && t <= 1.0);
+    // As t goes from 0.0 to 1.0, animate the two checkmark strokes from the
+    // mid point outwards.
+    final Path path = new Path();
+    const Offset start = const Offset(_kEdgeSize * 0.15, _kEdgeSize * 0.45);
+    const Offset mid = const Offset(_kEdgeSize * 0.4, _kEdgeSize * 0.7);
+    const Offset end = const Offset(_kEdgeSize * 0.85, _kEdgeSize * 0.25);
+    final Offset drawStart = Offset.lerp(start, mid, 1.0 - t);
+    final Offset drawEnd = Offset.lerp(mid, end, t);
+    path.moveTo(origin.dx + drawStart.dx, origin.dy + drawStart.dy);
+    path.lineTo(origin.dx + mid.dx, origin.dy + mid.dy);
+    path.lineTo(origin.dx + drawEnd.dx, origin.dy + drawEnd.dy);
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawDash(Canvas canvas, Offset origin, double t, Paint paint) {
+    assert(t >= 0.0 && t <= 1.0);
+    // As t goes from 0.0 to 1.0, animate the horizontal line from the
+    // mid point outwards.
+    const Offset start = const Offset(_kEdgeSize * 0.2, _kEdgeSize * 0.5);
+    const Offset mid = const Offset(_kEdgeSize * 0.5, _kEdgeSize * 0.5);
+    const Offset end = const Offset(_kEdgeSize * 0.8, _kEdgeSize * 0.5);
+    final Offset drawStart = Offset.lerp(start, mid, 1.0 - t);
+    final Offset drawEnd = Offset.lerp(mid, end, t);
+    canvas.drawLine(origin + drawStart, origin + drawEnd, paint);
+  }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-
     final Canvas canvas = context.canvas;
+    paintRadialReaction(canvas, offset, size.center(Offset.zero));
 
-    final double offsetX = offset.dx + (size.width - _kEdgeSize) / 2.0;
-    final double offsetY = offset.dy + (size.height - _kEdgeSize) / 2.0;
+    final Offset origin = offset + (size / 2.0 - const Size.square(_kEdgeSize) / 2.0);
+    final AnimationStatus status = position.status;
+    final double tNormalized = status == AnimationStatus.forward || status == AnimationStatus.completed
+      ? position.value
+      : 1.0 - position.value;
 
-    paintRadialReaction(canvas, offset, size.center(Point.origin));
+    // Four cases: false to null, false to true, null to false, true to false
+    if (_oldValue == false || value == false) {
+      final double t = value == false ? 1.0 - tNormalized : tNormalized;
+      final RRect outer = _outerRectAt(origin, t);
+      final Paint paint = new Paint()..color = _colorAt(t);
 
-    double t = position.value;
+      if (t <= 0.5) {
+        _drawBorder(canvas, outer, t, paint);
+      } else {
+        canvas.drawRRect(outer, paint);
 
-    Color borderColor = inactiveColor;
-    if (onChanged != null)
-      borderColor = t >= 0.25 ? activeColor : Color.lerp(inactiveColor, activeColor, t * 4.0);
-
-    Paint paint = new Paint()
-      ..color = borderColor;
-
-    double inset = 1.0 - (t - 0.5).abs() * 2.0;
-    double rectSize = _kEdgeSize - inset * _kStrokeWidth;
-    Rect rect = new Rect.fromLTWH(offsetX + inset, offsetY + inset, rectSize, rectSize);
-
-    RRect outer = new RRect.fromRectXY(rect, _kEdgeRadius, _kEdgeRadius);
-    if (t <= 0.5) {
-      // Outline
-      RRect inner = outer.deflate(math.min(rectSize / 2.0, _kStrokeWidth + rectSize * t));
-      canvas.drawDRRect(outer, inner, paint);
-    } else {
-      // Background
+        _initStrokePaint(paint);
+        final double tShrink = (t - 0.5) * 2.0;
+        if (_oldValue == null)
+          _drawDash(canvas, origin, tShrink, paint);
+        else
+          _drawCheck(canvas, origin, tShrink, paint);
+      }
+    } else { // Two cases: null to true, true to null
+      final RRect outer = _outerRectAt(origin, 1.0);
+      final Paint paint = new Paint() ..color = _colorAt(1.0);
       canvas.drawRRect(outer, paint);
 
-      // White inner check
-      double value = (t - 0.5) * 2.0;
-      paint
-        ..color = const Color(0xFFFFFFFF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _kStrokeWidth;
-      Path path = new Path();
-      Point start = new Point(_kEdgeSize * 0.15, _kEdgeSize * 0.45);
-      Point mid = new Point(_kEdgeSize * 0.4, _kEdgeSize * 0.7);
-      Point end = new Point(_kEdgeSize * 0.85, _kEdgeSize * 0.25);
-      Point drawStart = Point.lerp(start, mid, 1.0 - value);
-      Point drawEnd = Point.lerp(mid, end, value);
-      path.moveTo(offsetX + drawStart.x, offsetY + drawStart.y);
-      path.lineTo(offsetX + mid.x, offsetY + mid.y);
-      path.lineTo(offsetX + drawEnd.x, offsetY + drawEnd.y);
-      canvas.drawPath(path, paint);
+      _initStrokePaint(paint);
+      if (tNormalized <= 0.5) {
+        final double tShrink = 1.0 - tNormalized * 2.0;
+        if (_oldValue == true)
+          _drawCheck(canvas, origin, tShrink, paint);
+        else
+          _drawDash(canvas, origin, tShrink, paint);
+      } else {
+        final double tExpand = (tNormalized - 0.5) * 2.0;
+        if (value == true)
+          _drawCheck(canvas, origin, tExpand, paint);
+        else
+          _drawDash(canvas, origin, tExpand, paint);
+      }
     }
   }
+
+  // TODO(hmuller): smooth segues for cases where the value changes
+  // in the middle of position's animation cycle.
+  // https://github.com/flutter/flutter/issues/14674
+
+  // TODO(hmuller): accessibility support for tristate checkboxes.
+  // https://github.com/flutter/flutter/issues/14677
 }

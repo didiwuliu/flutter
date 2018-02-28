@@ -5,25 +5,43 @@
 import 'dart:async';
 
 import '../application_package.dart';
+import '../base/common.dart';
+import '../build_info.dart';
 import '../device.dart';
 import '../globals.dart';
 import '../runner/flutter_command.dart';
 
 class StopCommand extends FlutterCommand {
+  StopCommand() {
+    requiresPubspecYaml();
+  }
+
   @override
   final String name = 'stop';
 
   @override
   final String description = 'Stop your Flutter app on an attached device.';
 
-  @override
-  bool get requiresDevice => true;
+  Device device;
 
   @override
-  Future<int> runInProject() async {
-    Device device = deviceForCommand;
-    ApplicationPackage app = applicationPackages.getPackageForPlatform(device.platform);
+  Future<Null> validateCommand() async {
+    await super.validateCommand();
+    device = await findTargetDevice();
+    if (device == null)
+      throwToolExit(null);
+  }
+
+  @override
+  Future<Null> runCommand() async {
+    final TargetPlatform targetPlatform = await device.targetPlatform;
+    final ApplicationPackage app = await applicationPackages.getPackageForPlatform(targetPlatform);
+    if (app == null) {
+      final String platformName = getNameForTargetPlatform(targetPlatform);
+      throwToolExit('No Flutter application for $platformName found in the current directory.');
+    }
     printStatus('Stopping apps on ${device.name}.');
-    return await device.stopApp(app) ? 0 : 1;
+    if (!await device.stopApp(app))
+      throwToolExit(null);
   }
 }

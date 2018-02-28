@@ -4,69 +4,36 @@
 
 import 'package:flutter/material.dart';
 
-import 'stock_data.dart';
 import 'stock_arrow.dart';
+import 'stock_data.dart';
 
-enum StockRowPartKind { arrow }
-
-class StockRowPartKey extends Key {
-  const StockRowPartKey(this.keySalt, this.stock, this.part) : super.constructor();
-
-  final Object keySalt;
-  final Stock stock;
-  final StockRowPartKind part;
-
-  @override
-  bool operator ==(dynamic other) {
-    if (identical(this, other))
-      return true;
-    if (other.runtimeType != runtimeType)
-      return false;
-    final StockRowPartKey typedOther = other;
-    return keySalt == typedOther.keySalt
-        && stock == typedOther.stock
-        && part == typedOther.part;
-  }
-
-  @override
-  int get hashCode => hashValues(keySalt, stock, part);
-
-  @override
-  String toString() => '[$runtimeType ${keySalt.toString().split(".")[1]}:${stock.symbol}:${part.toString().split(".")[1]}]';
-}
-
-typedef void StockRowActionCallback(Stock stock, Key arrowKey);
+typedef void StockRowActionCallback(Stock stock);
 
 class StockRow extends StatelessWidget {
   StockRow({
-    Stock stock,
-    Object keySalt,
+    this.stock,
     this.onPressed,
     this.onDoubleTap,
     this.onLongPressed
-  }) : this.stock = stock,
-       _arrowKey = new StockRowPartKey(keySalt, stock, StockRowPartKind.arrow),
-       super(key: new ObjectKey(stock));
+  }) : super(key: new ObjectKey(stock));
 
   final Stock stock;
   final StockRowActionCallback onPressed;
   final StockRowActionCallback onDoubleTap;
   final StockRowActionCallback onLongPressed;
 
-  final Key _arrowKey;
-
   static const double kHeight = 79.0;
 
   GestureTapCallback _getHandler(StockRowActionCallback callback) {
-    return callback == null ? null : () => callback(stock, _arrowKey);
+    return callback == null ? null : () => callback(stock);
   }
 
   @override
   Widget build(BuildContext context) {
-    final String lastSale = "\$${stock.lastSale.toStringAsFixed(2)}";
-    String changeInPrice = "${stock.percentChange.toStringAsFixed(2)}%";
+    final String lastSale = '\$${stock.lastSale.toStringAsFixed(2)}';
+    String changeInPrice = '${stock.percentChange.toStringAsFixed(2)}%';
     if (stock.percentChange > 0)
-      changeInPrice = "+" + changeInPrice;
+      changeInPrice = '+' + changeInPrice;
     return new InkWell(
       onTap: _getHandler(onPressed),
       onDoubleTap: _getHandler(onDoubleTap),
@@ -83,35 +50,34 @@ class StockRow extends StatelessWidget {
             new Container(
               margin: const EdgeInsets.only(right: 5.0),
               child: new Hero(
-                tag: StockRowPartKind.arrow,
-                key: _arrowKey,
+                tag: stock,
                 child: new StockArrow(percentChange: stock.percentChange)
               )
             ),
-            new Flexible(
+            new Expanded(
               child: new Row(
                 children: <Widget>[
-                  new Flexible(
+                  new Expanded(
                     flex: 2,
                     child: new Text(
                       stock.symbol
                     )
                   ),
-                  new Flexible(
+                  new Expanded(
                     child: new Text(
                       lastSale,
-                      style: const TextStyle(textAlign: TextAlign.right)
+                      textAlign: TextAlign.right
                     )
                   ),
-                  new Flexible(
+                  new Expanded(
                     child: new Text(
                       changeInPrice,
-                      style: const TextStyle(textAlign: TextAlign.right)
+                      textAlign: TextAlign.right
                     )
                   ),
                 ],
                 crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: DefaultTextStyle.of(context).textBaseline
+                textBaseline: DefaultTextStyle.of(context).style.textBaseline
               )
             ),
           ]

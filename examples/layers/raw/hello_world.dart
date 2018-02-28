@@ -9,16 +9,16 @@ import 'dart:ui' as ui;
 
 void beginFrame(Duration timeStamp) {
   final double devicePixelRatio = ui.window.devicePixelRatio;
-  // TODO(abarth): ui.window.size should be in physical units.
-  final ui.Size logicalSize = ui.window.size;
+  final ui.Size logicalSize = ui.window.physicalSize / devicePixelRatio;
 
-  final ui.ParagraphBuilder paragraphBuilder = new ui.ParagraphBuilder()
+  final ui.ParagraphBuilder paragraphBuilder = new ui.ParagraphBuilder(
+    new ui.ParagraphStyle(textDirection: ui.TextDirection.ltr),
+  )
     ..addText('Hello, world.');
-  final ui.Paragraph paragraph = paragraphBuilder.build(new ui.ParagraphStyle())
-    ..maxWidth = logicalSize.width
-    ..layout();
+  final ui.Paragraph paragraph = paragraphBuilder.build()
+    ..layout(new ui.ParagraphConstraints(width: logicalSize.width));
 
-  final ui.Rect physicalBounds = ui.Point.origin & (logicalSize * devicePixelRatio);
+  final ui.Rect physicalBounds = ui.Offset.zero & (logicalSize * devicePixelRatio);
   final ui.PictureRecorder recorder = new ui.PictureRecorder();
   final ui.Canvas canvas = new ui.Canvas(recorder, physicalBounds);
   canvas.scale(devicePixelRatio, devicePixelRatio);

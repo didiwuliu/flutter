@@ -2,23 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:async';
-import 'dart:io';
-
 import 'package:archive/archive.dart';
-import 'package:path/path.dart' as path;
-
 import 'context.dart';
+import 'file_system.dart';
+import 'io.dart';
+import 'platform.dart';
 import 'process.dart';
+import 'process_manager.dart';
 
 /// Returns [OperatingSystemUtils] active in the current app context (i.e. zone).
-OperatingSystemUtils get os {
-  return context[OperatingSystemUtils] ?? (context[OperatingSystemUtils] = new OperatingSystemUtils._());
-}
+OperatingSystemUtils get os => context.putIfAbsent(OperatingSystemUtils, () => new OperatingSystemUtils());
 
 abstract class OperatingSystemUtils {
-  factory OperatingSystemUtils._() {
-    if (Platform.isWindows) {
+  factory OperatingSystemUtils() {
+    if (platform.isWindows) {
       return new _WindowsUtils();
     } else {
       return new _PosixUtils();
@@ -27,20 +24,54 @@ abstract class OperatingSystemUtils {
 
   OperatingSystemUtils._private();
 
-  String get operatingSystem => Platform.operatingSystem;
-
-  bool get isMacOS => operatingSystem == 'macos';
-  bool get isWindows => operatingSystem == 'windows';
-  bool get isLinux => operatingSystem == 'linux';
-
   /// Make the given file executable. This may be a no-op on some platforms.
   ProcessResult makeExecutable(File file);
 
-  /// Return the path (with symlinks resolved) to the given executable, or `null`
+  /// Return the path (with symlinks resolved) to the given executable, or null
   /// if `which` was not able to locate the binary.
-  File which(String execName);
+  File which(String execName) {
+    final List<File> result = _which(execName);
+    if (result == null || result.isEmpty)
+      return null;
+    return result.first;
+  }
+
+  /// Return a list of all paths to `execName` found on the system. Uses the
+  /// PATH environment variable.
+  List<File> whichAll(String execName) => _which(execName, all: true);
+
+  /// Return the File representing a new pipe.
+  File makePipe(String path);
+
+  void zip(Directory data, File zipFile);
 
   void unzip(File file, Directory targetDirectory);
+
+  /// Returns true if the ZIP is not corrupt.
+  bool verifyZip(File file);
+
+  void unpack(File gzippedTarFile, Directory targetDirectory);
+
+  /// Returns true if the gzip is not corrupt (does not check tar).
+  bool verifyGzip(File gzippedFile);
+
+  /// Returns a pretty name string for the current operating system.
+  ///
+  /// If available, the detailed version of the OS is included.
+  String get name {
+    const Map<String, String> osNames = const <String, String>{
+      'macos': 'Mac OS',
+      'linux': 'Linux',
+      'windows': 'Windows'
+    };
+    final String osName = platform.operatingSystem;
+    return osNames.containsKey(osName) ? osNames[osName] : osName;
+  }
+
+  List<File> _which(String execName, {bool all: false});
+
+  /// Returns the separator between items in the PATH environment variable.
+  String get pathVarSeparator;
 }
 
 class _PosixUtils extends OperatingSystemUtils {
@@ -48,18 +79,24 @@ class _PosixUtils extends OperatingSystemUtils {
 
   @override
   ProcessResult makeExecutable(File file) {
-    return Process.runSync('chmod', ['a+x', file.path]);
+    return processManager.runSync(<String>['chmod', 'a+x', file.path]);
   }
 
-  /// Return the path (with symlinks resolved) to the given executable, or `null`
-  /// if `which` was not able to locate the binary.
   @override
-  File which(String execName) {
-    ProcessResult result = Process.runSync('which', <String>[execName]);
+  List<File> _which(String execName, {bool all: false}) {
+    final List<String> command = <String>['which'];
+    if (all)
+      command.add('-a');
+    command.add(execName);
+    final ProcessResult result = processManager.runSync(command);
     if (result.exitCode != 0)
-      return null;
-    String path = result.stdout.trim().split('\n').first.trim();
-    return new File(new File(path).resolveSymbolicLinksSync());
+      return const <File>[];
+    return result.stdout.trim().split('\n').map((String path) => fs.file(path.trim())).toList();
+  }
+
+  @override
+  void zip(Directory data, File zipFile) {
+    runSync(<String>['zip', '-r', '-q', zipFile.path, '.'], workingDirectory: data.path);
   }
 
   // unzip -o -q zipfile -d dest
@@ -67,6 +104,48 @@ class _PosixUtils extends OperatingSystemUtils {
   void unzip(File file, Directory targetDirectory) {
     runSync(<String>['unzip', '-o', '-q', file.path, '-d', targetDirectory.path]);
   }
+
+  @override
+  bool verifyZip(File zipFile) => exitsHappy(<String>['zip', '-T', zipFile.path]);
+
+  // tar -xzf tarball -C dest
+  @override
+  void unpack(File gzippedTarFile, Directory targetDirectory) {
+    runSync(<String>['tar', '-xzf', gzippedTarFile.path, '-C', targetDirectory.path]);
+  }
+
+  @override
+  bool verifyGzip(File gzippedFile) => exitsHappy(<String>['gzip', '-t', gzippedFile.path]);
+
+  @override
+  File makePipe(String path) {
+    runSync(<String>['mkfifo', path]);
+    return fs.file(path);
+  }
+
+  String _name;
+
+  @override
+  String get name {
+    if (_name == null) {
+      if (platform.isMacOS) {
+        final List<ProcessResult> results = <ProcessResult>[
+          processManager.runSync(<String>['sw_vers', '-productName']),
+          processManager.runSync(<String>['sw_vers', '-productVersion']),
+          processManager.runSync(<String>['sw_vers', '-buildVersion']),
+        ];
+        if (results.every((ProcessResult result) => result.exitCode == 0)) {
+          _name = '${results[0].stdout.trim()} ${results[1].stdout
+              .trim()} ${results[2].stdout.trim()}';
+        }
+      }
+      _name ??= super.name;
+    }
+    return _name;
+  }
+
+  @override
+  String get pathVarSeparator => ':';
 }
 
 class _WindowsUtils extends OperatingSystemUtils {
@@ -79,33 +158,120 @@ class _WindowsUtils extends OperatingSystemUtils {
   }
 
   @override
-  File which(String execName) {
-    ProcessResult result = Process.runSync('where', <String>[execName]);
+  List<File> _which(String execName, {bool all: false}) {
+    // `where` always returns all matches, not just the first one.
+    final ProcessResult result = processManager.runSync(<String>['where', execName]);
     if (result.exitCode != 0)
-      return null;
-    return new File(result.stdout.trim().split('\n').first.trim());
+      return const <File>[];
+    final List<String> lines = result.stdout.trim().split('\n');
+    if (all)
+      return lines.map((String path) => fs.file(path.trim())).toList();
+    return <File>[fs.file(lines.first.trim())];
+  }
+
+  @override
+  void zip(Directory data, File zipFile) {
+    final Archive archive = new Archive();
+    for (FileSystemEntity entity in data.listSync(recursive: true)) {
+      if (entity is! File) {
+        continue;
+      }
+      final File file = entity;
+      final String path = file.fileSystem.path.relative(file.path, from: data.path);
+      final List<int> bytes = file.readAsBytesSync();
+      archive.addFile(new ArchiveFile(path, bytes.length, bytes));
+    }
+    zipFile.writeAsBytesSync(new ZipEncoder().encode(archive), flush: true);
   }
 
   @override
   void unzip(File file, Directory targetDirectory) {
-    Archive archive = new ZipDecoder().decodeBytes(file.readAsBytesSync());
+    final Archive archive = new ZipDecoder().decodeBytes(file.readAsBytesSync());
+    _unpackArchive(archive, targetDirectory);
+  }
 
+  @override
+  bool verifyZip(File zipFile) {
+    try {
+      new ZipDecoder().decodeBytes(zipFile.readAsBytesSync(), verify: true);
+    } on FileSystemException catch (_) {
+      return false;
+    } on ArchiveException catch (_) {
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  void unpack(File gzippedTarFile, Directory targetDirectory) {
+    final Archive archive = new TarDecoder().decodeBytes(
+      new GZipDecoder().decodeBytes(gzippedTarFile.readAsBytesSync()),
+    );
+    _unpackArchive(archive, targetDirectory);
+  }
+
+  @override
+  bool verifyGzip(File gzipFile) {
+    try {
+      new GZipDecoder().decodeBytes(gzipFile.readAsBytesSync(), verify: true);
+    } on FileSystemException catch (_) {
+      return false;
+    } on ArchiveException catch (_) {
+      return false;
+    }
+    return true;
+  }
+
+  void _unpackArchive(Archive archive, Directory targetDirectory) {
     for (ArchiveFile archiveFile in archive.files) {
       // The archive package doesn't correctly set isFile.
       if (!archiveFile.isFile || archiveFile.name.endsWith('/'))
         continue;
 
-      File destFile = new File(path.join(targetDirectory.path, archiveFile.name));
+      final File destFile = fs.file(fs.path.join(targetDirectory.path, archiveFile.name));
       if (!destFile.parent.existsSync())
         destFile.parent.createSync(recursive: true);
       destFile.writeAsBytesSync(archiveFile.content);
     }
   }
+
+  @override
+  File makePipe(String path) {
+    throw new UnsupportedError('makePipe is not implemented on Windows.');
+  }
+
+  String _name;
+
+  @override
+  String get name {
+    if (_name == null) {
+      final ProcessResult result = processManager.runSync(
+          <String>['ver'], runInShell: true);
+      if (result.exitCode == 0)
+        _name = result.stdout.trim();
+      else
+        _name = super.name;
+    }
+    return _name;
+  }
+
+  @override
+  String get pathVarSeparator => ';';
 }
 
-Future<int> findAvailablePort() async {
-  ServerSocket socket = await ServerSocket.bind(InternetAddress.LOOPBACK_IP_V4, 0);
-  int port = socket.port;
-  await socket.close();
-  return port;
+/// Find and return the project root directory relative to the specified
+/// directory or the current working directory if none specified.
+/// Return null if the project root could not be found
+/// or if the project root is the flutter repository root.
+String findProjectRoot([String directory]) {
+  const String kProjectRootSentinel = 'pubspec.yaml';
+  directory ??= fs.currentDirectory.path;
+  while (true) {
+    if (fs.isFileSync(fs.path.join(directory, kProjectRootSentinel)))
+      return directory;
+    final String parent = fs.path.dirname(directory);
+    if (directory == parent)
+      return null;
+    directory = parent;
+  }
 }

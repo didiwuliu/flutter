@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 import 'package:flutter/gestures.dart';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'velocity_tracker_data.dart';
 
 bool _withinTolerance(double actual, double expected) {
   const double kTolerance = 0.001; // Within .1% of expected value
-  double diff = (actual - expected)/expected;
+  final double diff = (actual - expected)/expected;
   return diff.abs() < kTolerance;
 }
 
@@ -19,7 +19,7 @@ bool _checkVelocity(Velocity actual, Offset expected) {
 }
 
 void main() {
-  List<Offset> expected = const <Offset>[
+  const List<Offset> expected = const <Offset>[
     const Offset(219.5762939453125, 1304.6705322265625),
     const Offset(355.6900939941406, 967.1700439453125),
     const Offset(12.651158332824707, -36.9227180480957),
@@ -36,7 +36,7 @@ void main() {
   ];
 
   test('Velocity tracker gives expected results', () {
-    VelocityTracker tracker = new VelocityTracker();
+    final VelocityTracker tracker = new VelocityTracker();
     int i = 0;
     for (PointerEvent event in velocityEventData) {
       if (event is PointerDownEvent || event is PointerMoveEvent)
@@ -46,5 +46,34 @@ void main() {
         i += 1;
       }
     }
+  });
+
+  test('Velocity control test', () {
+    const Velocity velocity1 = const Velocity(pixelsPerSecond: const Offset(7.0, 0.0));
+    const Velocity velocity2 = const Velocity(pixelsPerSecond: const Offset(12.0, 0.0));
+    expect(velocity1, equals(const Velocity(pixelsPerSecond: const Offset(7.0, 0.0))));
+    expect(velocity1, isNot(equals(velocity2)));
+    expect(velocity2 - velocity1, equals(const Velocity(pixelsPerSecond: const Offset(5.0, 0.0))));
+    expect((-velocity1).pixelsPerSecond, const Offset(-7.0, 0.0));
+    expect(velocity1 + velocity2, equals(const Velocity(pixelsPerSecond: const Offset(19.0, 0.0))));
+    expect(velocity1.hashCode, isNot(equals(velocity2.hashCode)));
+    expect(velocity1, hasOneLineDescription);
+  });
+
+  test('Interrupted velocity estimation', () {
+    // Regression test for https://github.com/flutter/flutter/pull/7510
+    final VelocityTracker tracker = new VelocityTracker();
+    for (PointerEvent event in interruptedVelocityEventData) {
+      if (event is PointerDownEvent || event is PointerMoveEvent)
+        tracker.addPosition(event.timeStamp, event.position);
+      if (event is PointerUpEvent) {
+        _checkVelocity(tracker.getVelocity(), const Offset(649.5, 3890.3));
+      }
+    }
+  });
+
+  test('No data velocity estimation', () {
+    final VelocityTracker tracker = new VelocityTracker();
+    expect(tracker.getVelocity(), Velocity.zero);
   });
 }

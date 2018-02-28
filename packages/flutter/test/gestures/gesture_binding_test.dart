@@ -6,8 +6,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:mojo/bindings.dart' as mojo_bindings;
-import 'package:sky_services/pointer/pointer.mojom.dart';
 import 'package:test/test.dart';
 
 typedef void HandleEventCallback(PointerEvent event);
@@ -26,8 +24,7 @@ class TestGestureFlutterBinding extends BindingBase with GestureBinding {
 TestGestureFlutterBinding _binding = new TestGestureFlutterBinding();
 
 void ensureTestGestureBinding() {
-  if (_binding == null)
-    _binding = new TestGestureFlutterBinding();
+  _binding ??= new TestGestureFlutterBinding();
   assert(GestureBinding.instance != null);
 }
 
@@ -35,40 +32,145 @@ void main() {
   setUp(ensureTestGestureBinding);
 
   test('Pointer tap events', () {
-    mojo_bindings.Encoder encoder = new mojo_bindings.Encoder();
+    const ui.PointerDataPacket packet = const ui.PointerDataPacket(
+      data: const <ui.PointerData>[
+        const ui.PointerData(change: ui.PointerChange.down),
+        const ui.PointerData(change: ui.PointerChange.up),
+      ]
+    );
 
-    PointerPacket packet = new PointerPacket();
-    packet.pointers = <Pointer>[new Pointer(), new Pointer()];
-    packet.pointers[0].type = PointerType.down;
-    packet.pointers[0].kind = PointerKind.touch;
-    packet.pointers[1].type = PointerType.up;
-    packet.pointers[1].kind = PointerKind.touch;
-    packet.encode(encoder);
+    final List<PointerEvent> events = <PointerEvent>[];
+    _binding.callback = events.add;
 
-    List<PointerEvent> events = <PointerEvent>[];
-    _binding.callback = (PointerEvent event) => events.add(event);
-
-    ui.window.onPointerPacket(encoder.message.buffer);
+    ui.window.onPointerDataPacket(packet);
+    expect(events.length, 2);
     expect(events[0].runtimeType, equals(PointerDownEvent));
     expect(events[1].runtimeType, equals(PointerUpEvent));
   });
 
+  test('Pointer move events', () {
+    const ui.PointerDataPacket packet = const ui.PointerDataPacket(
+      data: const <ui.PointerData>[
+        const ui.PointerData(change: ui.PointerChange.down),
+        const ui.PointerData(change: ui.PointerChange.move),
+        const ui.PointerData(change: ui.PointerChange.up),
+      ]
+    );
+
+    final List<PointerEvent> events = <PointerEvent>[];
+    _binding.callback = events.add;
+
+    ui.window.onPointerDataPacket(packet);
+    expect(events.length, 3);
+    expect(events[0].runtimeType, equals(PointerDownEvent));
+    expect(events[1].runtimeType, equals(PointerMoveEvent));
+    expect(events[2].runtimeType, equals(PointerUpEvent));
+  });
+
+  test('Synthetic move events', () {
+    final ui.PointerDataPacket packet = new ui.PointerDataPacket(
+      data: <ui.PointerData>[
+        new ui.PointerData(
+          change: ui.PointerChange.down,
+          physicalX: 1.0 * ui.window.devicePixelRatio,
+          physicalY: 3.0 * ui.window.devicePixelRatio,
+        ),
+        new ui.PointerData(
+          change: ui.PointerChange.up,
+          physicalX: 10.0 * ui.window.devicePixelRatio,
+          physicalY: 15.0 * ui.window.devicePixelRatio,
+        ),
+      ]
+    );
+
+    final List<PointerEvent> events = <PointerEvent>[];
+    _binding.callback = events.add;
+
+    ui.window.onPointerDataPacket(packet);
+    expect(events.length, 3);
+    expect(events[0].runtimeType, equals(PointerDownEvent));
+    expect(events[1].runtimeType, equals(PointerMoveEvent));
+    expect(events[1].delta, equals(const Offset(9.0, 12.0)));
+    expect(events[2].runtimeType, equals(PointerUpEvent));
+  });
+
   test('Pointer cancel events', () {
-    mojo_bindings.Encoder encoder = new mojo_bindings.Encoder();
+    const ui.PointerDataPacket packet = const ui.PointerDataPacket(
+      data: const <ui.PointerData>[
+        const ui.PointerData(change: ui.PointerChange.down),
+        const ui.PointerData(change: ui.PointerChange.cancel),
+      ]
+    );
 
-    PointerPacket packet = new PointerPacket();
-    packet.pointers = <Pointer>[new Pointer(), new Pointer()];
-    packet.pointers[0].type = PointerType.down;
-    packet.pointers[0].kind = PointerKind.touch;
-    packet.pointers[1].type = PointerType.cancel;
-    packet.pointers[1].kind = PointerKind.touch;
-    packet.encode(encoder);
+    final List<PointerEvent> events = <PointerEvent>[];
+    _binding.callback = events.add;
 
-    List<PointerEvent> events = <PointerEvent>[];
-    _binding.callback = (PointerEvent event) => events.add(event);
-
-    ui.window.onPointerPacket(encoder.message.buffer);
+    ui.window.onPointerDataPacket(packet);
+    expect(events.length, 2);
     expect(events[0].runtimeType, equals(PointerDownEvent));
     expect(events[1].runtimeType, equals(PointerCancelEvent));
+  });
+
+  test('Can cancel pointers', () {
+    const ui.PointerDataPacket packet = const ui.PointerDataPacket(
+      data: const <ui.PointerData>[
+        const ui.PointerData(change: ui.PointerChange.down),
+        const ui.PointerData(change: ui.PointerChange.up),
+      ]
+    );
+
+    final List<PointerEvent> events = <PointerEvent>[];
+    _binding.callback = (PointerEvent event) {
+      events.add(event);
+      if (event is PointerDownEvent)
+        _binding.cancelPointer(event.pointer);
+    };
+
+    ui.window.onPointerDataPacket(packet);
+    expect(events.length, 2);
+    expect(events[0].runtimeType, equals(PointerDownEvent));
+    expect(events[1].runtimeType, equals(PointerCancelEvent));
+  });
+
+  test('Can expand add and hover pointers', () {
+    const ui.PointerDataPacket packet = const ui.PointerDataPacket(
+      data: const <ui.PointerData>[
+        const ui.PointerData(change: ui.PointerChange.add, device: 24),
+        const ui.PointerData(change: ui.PointerChange.hover, device: 24),
+        const ui.PointerData(change: ui.PointerChange.remove, device: 24),
+        const ui.PointerData(change: ui.PointerChange.hover, device: 24),
+      ]
+    );
+
+    final List<PointerEvent> events = PointerEventConverter.expand(
+      packet.data, ui.window.devicePixelRatio).toList();
+
+    expect(events.length, 5);
+    expect(events[0].runtimeType, equals(PointerAddedEvent));
+    expect(events[1].runtimeType, equals(PointerHoverEvent));
+    expect(events[2].runtimeType, equals(PointerRemovedEvent));
+    expect(events[3].runtimeType, equals(PointerAddedEvent));
+    expect(events[4].runtimeType, equals(PointerHoverEvent));
+  });
+
+  test('Synthetic hover and cancel for misplaced down and remove', () {
+    final ui.PointerDataPacket packet = new ui.PointerDataPacket(
+      data: <ui.PointerData>[
+        new ui.PointerData(change: ui.PointerChange.add, device: 25, physicalX: 10.0 * ui.window.devicePixelRatio, physicalY: 10.0 * ui.window.devicePixelRatio),
+        new ui.PointerData(change: ui.PointerChange.down, device: 25, physicalX: 15.0 * ui.window.devicePixelRatio, physicalY: 17.0 * ui.window.devicePixelRatio),
+        const ui.PointerData(change: ui.PointerChange.remove, device: 25),
+      ]
+    );
+
+    final List<PointerEvent> events = PointerEventConverter.expand(
+      packet.data, ui.window.devicePixelRatio).toList();
+
+    expect(events.length, 5);
+    expect(events[0].runtimeType, equals(PointerAddedEvent));
+    expect(events[1].runtimeType, equals(PointerHoverEvent));
+    expect(events[1].delta, equals(const Offset(5.0, 7.0)));
+    expect(events[2].runtimeType, equals(PointerDownEvent));
+    expect(events[3].runtimeType, equals(PointerCancelEvent));
+    expect(events[4].runtimeType, equals(PointerRemovedEvent));
   });
 }

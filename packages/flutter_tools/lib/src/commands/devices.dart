@@ -4,8 +4,10 @@
 
 import 'dart:async';
 
+import '../base/common.dart';
 import '../base/utils.dart';
 import '../device.dart';
+import '../doctor.dart';
 import '../globals.dart';
 import '../runner/flutter_command.dart';
 
@@ -17,31 +19,31 @@ class DevicesCommand extends FlutterCommand {
   final String description = 'List all connected devices.';
 
   @override
-  final List<String> aliases = <String>['list'];
-
-  @override
-  bool get requiresProjectRoot => false;
-
-  @override
-  Future<int> runInProject() async {
+  Future<Null> runCommand() async {
     if (!doctor.canListAnything) {
-      printError("Unable to locate a development device; please run 'flutter doctor' for "
-        "information about installing additional components.");
-      return 1;
+      throwToolExit(
+        "Unable to locate a development device; please run 'flutter doctor' for "
+        'information about installing additional components.',
+        exitCode: 1);
     }
 
-    List<Device> devices = await deviceManager.getAllConnectedDevices();
+    final List<Device> devices = await deviceManager.getAllConnectedDevices().toList();
 
     if (devices.isEmpty) {
       printStatus(
         'No devices detected.\n\n'
         'If you expected your device to be detected, please run "flutter doctor" to diagnose\n'
         'potential issues, or visit https://flutter.io/setup/ for troubleshooting tips.');
+      final List<String> diagnostics = await deviceManager.getDeviceDiagnostics();
+      if (diagnostics.isNotEmpty) {
+        printStatus('');
+        for (String diagnostic in diagnostics) {
+          printStatus('• ${diagnostic.replaceAll('\n', '\n  ')}');
+        }
+      }
     } else {
       printStatus('${devices.length} connected ${pluralize('device', devices.length)}:\n');
-      Device.printDevices(devices);
+      await Device.printDevices(devices);
     }
-
-    return 0;
   }
 }

@@ -3,17 +3,14 @@
 // found in the LICENSE file.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:test/test.dart';
 
 import '../lib/main.dart' as hello_world;
 
 void main() {
-  test("Hello world smoke test", () {
-    testWidgets((WidgetTester tester) {
-      hello_world.main(); // builds the app and schedules a frame but doesn't trigger one
-      tester.pump(); // triggers a frame
+  testWidgets('Hello world smoke test', (WidgetTester tester) async {
+    hello_world.main(); // builds the app and schedules a frame but doesn't trigger one
+    await tester.pump(); // triggers a frame
 
-      expect(tester, hasWidget(find.text('Hello, world!')));
-    });
+    expect(find.text('Hello, world!'), findsOneWidget);
   });
 }

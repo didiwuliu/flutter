@@ -9,7 +9,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stocks/main.dart' as stocks;
 import 'package:stocks/stock_data.dart' as stock_data;
-import 'package:test/test.dart';
 
 Element findElementOfExactWidgetTypeGoingDown(Element node, Type targetType) {
   void walker(Element child) {
@@ -38,61 +37,55 @@ Element findElementOfExactWidgetTypeGoingUp(Element node, Type targetType) {
 
 final RegExp materialIconAssetNameColorExtractor = new RegExp(r'[^/]+/ic_.+_(white|black)_[0-9]+dp\.png');
 
-void checkIconColor(ElementTreeTester tester, String label, Color color) {
-  // The icon is going to be in the same merged semantics box as the text
-  // regardless of how the menu item is represented, so this is a good
-  // way to find the menu item. I hope.
-  Element semantics = findElementOfExactWidgetTypeGoingUp(tester.findText(label), MergeSemantics);
-  expect(semantics, isNotNull);
-  Element asset = findElementOfExactWidgetTypeGoingDown(semantics, Text);
-  Text text = asset.widget;
-  expect(text.style.color, equals(color));
+void checkIconColor(WidgetTester tester, String label, Color color) {
+  final Element listTile = findElementOfExactWidgetTypeGoingUp(tester.element(find.text(label)), ListTile);
+  expect(listTile, isNotNull);
+  final Element asset = findElementOfExactWidgetTypeGoingDown(listTile, RichText);
+  final RichText richText = asset.widget;
+  expect(richText.text.style.color, equals(color));
 }
 
 void main() {
-  stock_data.StockDataFetcher.actuallyFetchData = false;
+  stock_data.StockData.actuallyFetchData = false;
 
-  test("Test icon colors", () {
-    testWidgets((WidgetTester tester) {
-      stocks.main(); // builds the app and schedules a frame but doesn't trigger one
-      tester.pump(); // see https://github.com/flutter/flutter/issues/1865
-      tester.pump(); // triggers a frame
+  testWidgets('Icon colors', (WidgetTester tester) async {
+    stocks.main(); // builds the app and schedules a frame but doesn't trigger one
+    await tester.pump(); // see https://github.com/flutter/flutter/issues/1865
+    await tester.pump(); // triggers a frame
 
-      // sanity check
-      expect(tester, hasWidget(find.text('MARKET')));
-      expect(tester, doesNotHaveWidget(find.text('Help & Feedback')));
-      tester.pump(new Duration(seconds: 2));
-      expect(tester, hasWidget(find.text('MARKET')));
-      expect(tester, doesNotHaveWidget(find.text('Help & Feedback')));
+    // sanity check
+    expect(find.text('MARKET'), findsOneWidget);
+    expect(find.text('Account Balance'), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('MARKET'), findsOneWidget);
+    expect(find.text('Account Balance'), findsNothing);
 
-      // drag the drawer out
-      Point left = new Point(0.0, ui.window.size.height / 2.0);
-      Point right = new Point(ui.window.size.width, left.y);
-      TestGesture gesture = tester.startGesture(left);
-      tester.pump();
-      gesture.moveTo(right);
-      tester.pump();
-      gesture.up();
-      tester.pump();
-      expect(tester, hasWidget(find.text('MARKET')));
-      expect(tester, hasWidget(find.text('Help & Feedback')));
+    // drag the drawer out
+    final Offset left = new Offset(0.0, (ui.window.physicalSize / ui.window.devicePixelRatio).height / 2.0);
+    final Offset right = new Offset((ui.window.physicalSize / ui.window.devicePixelRatio).width, left.dy);
+    final TestGesture gesture = await tester.startGesture(left);
+    await tester.pump();
+    await gesture.moveTo(right);
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(find.text('MARKET'), findsOneWidget);
+    expect(find.text('Account Balance'), findsOneWidget);
 
-      // check the colour of the icon - light mode
-      checkIconColor(tester.elementTreeTester, 'Stock List', Colors.purple[500]); // theme primary color
-      checkIconColor(tester.elementTreeTester, 'Account Balance', Colors.black45); // enabled
-      checkIconColor(tester.elementTreeTester, 'Help & Feedback', Colors.black26); // disabled
+    // check the colour of the icon - light mode
+    checkIconColor(tester, 'Stock List', Colors.purple.shade500); // theme primary color
+    checkIconColor(tester, 'Account Balance', Colors.black26); // disabled
+    checkIconColor(tester, 'About', Colors.black45); // enabled
 
-      // switch to dark mode
-      tester.tap(find.text('Pessimistic'));
-      tester.pump(); // get the tap and send the notification that the theme has changed
-      tester.pump(); // start the theme transition
-      tester.pump(const Duration(seconds: 5)); // end the transition
+    // switch to dark mode
+    await tester.tap(find.text('Pessimistic'));
+    await tester.pump(); // get the tap and send the notification that the theme has changed
+    await tester.pump(); // start the theme transition
+    await tester.pump(const Duration(seconds: 5)); // end the transition
 
-      // check the colour of the icon - dark mode
-      checkIconColor(tester.elementTreeTester, 'Stock List', Colors.redAccent[200]); // theme accent color
-      checkIconColor(tester.elementTreeTester, 'Account Balance', Colors.white); // enabled
-      checkIconColor(tester.elementTreeTester, 'Help & Feedback', Colors.white30); // disabled
-
-    });
+    // check the colour of the icon - dark mode
+    checkIconColor(tester, 'Stock List', Colors.redAccent); // theme accent color
+    checkIconColor(tester, 'Account Balance', Colors.white30); // disabled
+    checkIconColor(tester, 'About', Colors.white); // enabled
   });
 }

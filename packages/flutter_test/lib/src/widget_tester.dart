@@ -2,594 +2,535 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:collection';
+import 'dart:async';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
-import 'package:quiver/testing/async.dart';
-import 'package:test/test.dart';
+import 'package:test/test.dart' as test_package;
 
+import 'all_elements.dart';
 import 'binding.dart';
-import 'test_pointer.dart';
+import 'controller.dart';
+import 'finders.dart';
+import 'test_async_utils.dart';
+import 'test_text_input.dart';
 
-/// Signature for [CommonFinders.byPredicate].
-typedef bool WidgetPredicate(Widget widget);
+export 'package:test/test.dart' hide expect;
 
-/// Signature for [CommonFinders.byElement].
-typedef bool ElementPredicate(Element element);
+/// Signature for callback to [testWidgets] and [benchmarkWidgets].
+typedef Future<Null> WidgetTesterCallback(WidgetTester widgetTester);
 
 /// Runs the [callback] inside the Flutter test environment.
 ///
 /// Use this function for testing custom [StatelessWidget]s and
 /// [StatefulWidget]s.
 ///
+/// The callback can be asynchronous (using `async`/`await` or
+/// using explicit [Future]s).
+///
+/// This function uses the [test] function in the test package to
+/// register the given callback as a test. The callback, when run,
+/// will be given a new instance of [WidgetTester]. The [find] object
+/// provides convenient widget [Finder]s for use with the
+/// [WidgetTester].
+///
+/// ## Sample code
+///
+/// ```dart
+///     testWidgets('MyWidget', (WidgetTester tester) async {
+///       await tester.pumpWidget(new MyWidget());
+///       await tester.tap(find.text('Save'));
+///       expect(find.text('Success'), findsOneWidget);
+///     });
+/// ```
+void testWidgets(String description, WidgetTesterCallback callback, {
+  bool skip: false,
+  test_package.Timeout timeout
+}) {
+  final TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
+  final WidgetTester tester = new WidgetTester._(binding);
+  timeout ??= binding.defaultTestTimeout;
+  test_package.group('-', () {
+    test_package.test(
+      description,
+      () {
+        return binding.runTest(
+          () => callback(tester),
+          tester._endOfTestVerifications,
+          description: description ?? '',
+        );
+      },
+      skip: skip,
+    );
+    test_package.tearDown(binding.postTest);
+  }, timeout: timeout);
+}
+
+/// Runs the [callback] inside the Flutter benchmark environment.
+///
+/// Use this function for benchmarking custom [StatelessWidget]s and
+/// [StatefulWidget]s when you want to be able to use features from
+/// [TestWidgetsFlutterBinding]. The callback, when run, will be given
+/// a new instance of [WidgetTester]. The [find] object provides
+/// convenient widget [Finder]s for use with the [WidgetTester].
+///
+/// The callback can be asynchronous (using `async`/`await` or using
+/// explicit [Future]s). If it is, then [benchmarkWidgets] will return
+/// a [Future] that completes when the callback's does. Otherwise, it
+/// will return a Future that is always complete.
+///
+/// If the callback is asynchronous, make sure you `await` the call
+/// to [benchmarkWidgets], otherwise it won't run!
+///
+/// Benchmarks must not be run in checked mode. To avoid this, this
+/// function will print a big message if it is run in checked mode.
+///
 /// Example:
 ///
-///     test('MyWidget', () {
-///        testWidgets((WidgetTester tester) {
-///          tester.pumpWidget(new MyWidget());
-///          tester.tap(find.text('Save'));
-///          expect(tester, hasWidget(find.text('Success')));
-///        });
-///     });
-void testWidgets(void callback(WidgetTester widgetTester)) {
-  testElementTree((ElementTreeTester elementTreeTester) {
-    callback(new WidgetTester._(elementTreeTester));
-  });
+///     main() async {
+///       assert(false); // fail in checked mode
+///       await benchmarkWidgets((WidgetTester tester) async {
+///         await tester.pumpWidget(new MyWidget());
+///         final Stopwatch timer = new Stopwatch()..start();
+///         for (int index = 0; index < 10000; index += 1) {
+///           await tester.tap(find.text('Tap me'));
+///           await tester.pump();
+///         }
+///         timer.stop();
+///         debugPrint('Time taken: ${timer.elapsedMilliseconds}ms');
+///       });
+///       exit(0);
+///     }
+Future<Null> benchmarkWidgets(WidgetTesterCallback callback) {
+  assert(() {
+    print('┏╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍┓');
+    print('┇ ⚠ THIS BENCHMARK IS BEING RUN WITH ASSERTS ENABLED ⚠  ┇');
+    print('┡╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍╍┦');
+    print('│                                                       │');
+    print('│  Numbers obtained from a benchmark while asserts are  │');
+    print('│  enabled will not accurately reflect the performance  │');
+    print('│  that will be experienced by end users using release  ╎');
+    print('│  builds. Benchmarks should be run using this command  ┆');
+    print('│  line:  flutter run --release benchmark.dart          ┊');
+    print('│                                                        ');
+    print('└─────────────────────────────────────────────────╌┄┈  🐢');
+    return true;
+  }());
+  final TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
+  assert(binding is! AutomatedTestWidgetsFlutterBinding);
+  final WidgetTester tester = new WidgetTester._(binding);
+  return binding.runTest(
+    () => callback(tester),
+    tester._endOfTestVerifications,
+  ) ?? new Future<Null>.value();
+}
+
+/// Assert that `actual` matches `matcher`.
+///
+/// See [test_package.expect] for details. This is a variant of that function
+/// that additionally verifies that there are no asynchronous APIs
+/// that have not yet resolved.
+void expect(dynamic actual, dynamic matcher, {
+  String reason,
+  dynamic skip, // true or a String
+}) {
+  TestAsyncUtils.guardSync();
+  test_package.expect(actual, matcher, reason: reason, skip: skip);
+}
+
+/// Assert that `actual` matches `matcher`.
+///
+/// See [test_package.expect] for details. This variant will _not_ check that
+/// there are no outstanding asynchronous API requests. As such, it can be
+/// called from, e.g., callbacks that are run during build or layout, or in the
+/// completion handlers of futures that execute in response to user input.
+///
+/// Generally, it is better to use [expect], which does include checks to ensure
+/// that asynchronous APIs are not being called.
+void expectSync(dynamic actual, dynamic matcher, {
+  String reason,
+}) {
+  test_package.expect(actual, matcher, reason: reason);
 }
 
 /// Class that programmatically interacts with widgets and the test environment.
-class WidgetTester {
-  WidgetTester._(this.elementTreeTester);
+///
+/// For convenience, instances of this class (such as the one provided by
+/// `testWidget`) can be used as the `vsync` for `AnimationController` objects.
+class WidgetTester extends WidgetController implements HitTestDispatcher, TickerProvider {
+  WidgetTester._(TestWidgetsFlutterBinding binding) : super(binding) {
+    if (binding is LiveTestWidgetsFlutterBinding)
+      binding.deviceEventDispatcher = this;
+  }
 
-  /// Exposes the [Element] tree created from widgets.
-  final ElementTreeTester elementTreeTester;
-
-  /// The binding instance that the widget tester is using when it
-  /// needs a binding (e.g. for event dispatch).
-  WidgetsBinding get binding => elementTreeTester.binding;
+  /// The binding instance used by the testing framework.
+  @override
+  TestWidgetsFlutterBinding get binding => super.binding;
 
   /// Renders the UI from the given [widget].
   ///
-  /// See [ElementTreeTester.pumpWidget] for details.
-  void pumpWidget(Widget widget, [ Duration duration, EnginePhase phase ]) {
-    elementTreeTester.pumpWidget(widget, duration, phase);
-  }
-
-  /// Triggers a sequence of frames for [duration] amount of time.
+  /// Calls [runApp] with the given widget, then triggers a frame and flushes
+  /// microtasks, by calling [pump] with the same `duration` (if any). The
+  /// supplied [EnginePhase] is the final phase reached during the pump pass; if
+  /// not supplied, the whole pass is executed.
   ///
-  /// See [ElementTreeTester.pump] for details.
-  void pump([ Duration duration, EnginePhase phase ]) {
-    elementTreeTester.pump(duration, phase);
-  }
-
-  /// Changes the current locale.
+  /// Subsequent calls to this is different from [pump] in that it forces a full
+  /// rebuild of the tree, even if [widget] is the same as the previous call.
+  /// [pump] will only rebuild the widgets that have changed.
   ///
-  /// See [ElementTreeTester.setLocale] for details.
-  void setLocale(String languageCode, String countryCode) {
-    elementTreeTester.setLocale(languageCode, countryCode);
+  /// See also [LiveTestWidgetsFlutterBindingFramePolicy], which affects how
+  /// this method works when the test is run with `flutter run`.
+  Future<Null> pumpWidget(Widget widget, [
+    Duration duration,
+    EnginePhase phase = EnginePhase.sendSemanticsUpdate,
+  ]) {
+    return TestAsyncUtils.guard(() {
+      binding.attachRootWidget(widget);
+      binding.scheduleFrame();
+      return binding.pump(duration, phase);
+    });
   }
 
-  /// Sends an [event] at [result] location.
+  /// Triggers a frame after `duration` amount of time.
+  ///
+  /// This makes the framework act as if the application had janked (missed
+  /// frames) for `duration` amount of time, and then received a v-sync signal
+  /// to paint the application.
+  ///
+  /// This is a convenience function that just calls
+  /// [TestWidgetsFlutterBinding.pump].
+  ///
+  /// See also [LiveTestWidgetsFlutterBindingFramePolicy], which affects how
+  /// this method works when the test is run with `flutter run`.
+  @override
+  Future<Null> pump([
+    Duration duration,
+    EnginePhase phase = EnginePhase.sendSemanticsUpdate,
+  ]) {
+    return TestAsyncUtils.guard(() => binding.pump(duration, phase));
+  }
+
+  /// Repeatedly calls [pump] with the given `duration` until there are no
+  /// longer any frames scheduled. This will call [pump] at least once, even if
+  /// no frames are scheduled when the function is called, to flush any pending
+  /// microtasks which may themselves schedule a frame.
+  ///
+  /// This essentially waits for all animations to have completed.
+  ///
+  /// If it takes longer that the given `timeout` to settle, then the test will
+  /// fail (this method will throw an exception). In particular, this means that
+  /// if there is an infinite animation in progress (for example, if there is an
+  /// indeterminate progress indicator spinning), this method will throw.
+  ///
+  /// The default timeout is ten minutes, which is longer than most reasonable
+  /// finite animations would last.
+  ///
+  /// If the function returns, it returns the number of pumps that it performed.
+  ///
+  /// In general, it is better practice to figure out exactly why each frame is
+  /// needed, and then to [pump] exactly as many frames as necessary. This will
+  /// help catch regressions where, for instance, an animation is being started
+  /// one frame later than it should.
+  ///
+  /// Alternatively, one can check that the return value from this function
+  /// matches the expected number of pumps.
+  Future<int> pumpAndSettle([
+      Duration duration = const Duration(milliseconds: 100),
+      EnginePhase phase = EnginePhase.sendSemanticsUpdate,
+      Duration timeout = const Duration(minutes: 10),
+    ]) {
+    assert(duration != null);
+    assert(duration > Duration.ZERO);
+    assert(timeout != null);
+    assert(timeout > Duration.ZERO);
+    assert(() {
+      final WidgetsBinding binding = this.binding;
+      if (binding is LiveTestWidgetsFlutterBinding &&
+          binding.framePolicy == LiveTestWidgetsFlutterBindingFramePolicy.benchmark) {
+        throw 'When using LiveTestWidgetsFlutterBindingFramePolicy.benchmark, '
+              'hasScheduledFrame is never set to true. This means that pumpAndSettle() '
+              'cannot be used, because it has no way to know if the application has '
+              'stopped registering new frames.';
+      }
+      return true;
+    }());
+    int count = 0;
+    return TestAsyncUtils.guard(() async {
+      final DateTime endTime = binding.clock.fromNowBy(timeout);
+      do {
+        if (binding.clock.now().isAfter(endTime))
+          throw new FlutterError('pumpAndSettle timed out');
+        await binding.pump(duration, phase);
+        count += 1;
+      } while (binding.hasScheduledFrame);
+    }).then<int>((Null _) => count);
+  }
+
+  /// Whether there are any any transient callbacks scheduled.
+  ///
+  /// This essentially checks whether all animations have completed.
+  ///
+  /// See also:
+  ///
+  ///  * [pumpAndSettle], which essentially calls [pump] until there are no
+  ///    scheduled frames.
+  ///  * [SchedulerBinding.transientCallbackCount], which is the value on which
+  ///    this is based.
+  ///  * [SchedulerBinding.hasScheduledFrame], which is true whenever a frame is
+  ///    pending. [SchedulerBinding.hasScheduledFrame] is made true when a
+  ///    widget calls [State.setState], even if there are no transient callbacks
+  ///    scheduled. This is what [pumpAndSettle] uses.
+  bool get hasRunningAnimations => binding.transientCallbackCount > 0;
+
+  @override
+  HitTestResult hitTestOnBinding(Offset location) {
+    location = binding.localToGlobal(location);
+    return super.hitTestOnBinding(location);
+  }
+
+  @override
+  Future<Null> sendEventToBinding(PointerEvent event, HitTestResult result) {
+    return TestAsyncUtils.guard(() async {
+      binding.dispatchEvent(event, result, source: TestBindingEventSource.test);
+      return null;
+    });
+  }
+
+  /// Handler for device events caught by the binding in live test mode.
+  @override
   void dispatchEvent(PointerEvent event, HitTestResult result) {
-    binding.dispatchEvent(event, result);
+    if (event is PointerDownEvent) {
+      final RenderObject innerTarget = result.path.firstWhere(
+        (HitTestEntry candidate) => candidate.target is RenderObject,
+      ).target;
+      final Element innerTargetElement = collectAllElementsFrom(
+        binding.renderViewElement,
+        skipOffstage: true,
+      ).lastWhere(
+        (Element element) => element.renderObject == innerTarget,
+        orElse: () => null,
+      );
+      if (innerTargetElement == null) {
+        debugPrint('No widgets found at ${binding.globalToLocal(event.position)}.');
+        return;
+      }
+      final List<Element> candidates = <Element>[];
+      innerTargetElement.visitAncestorElements((Element element) {
+        candidates.add(element);
+        return true;
+      });
+      assert(candidates.isNotEmpty);
+      String descendantText;
+      int numberOfWithTexts = 0;
+      int numberOfTypes = 0;
+      int totalNumber = 0;
+      debugPrint('Some possible finders for the widgets at ${binding.globalToLocal(event.position)}:');
+      for (Element element in candidates) {
+        if (totalNumber > 13) // an arbitrary number of finders that feels useful without being overwhelming
+          break;
+        totalNumber += 1; // optimistically assume we'll be able to describe it
+
+        if (element.widget is Tooltip) {
+          final Tooltip widget = element.widget;
+          final Iterable<Element> matches = find.byTooltip(widget.message).evaluate();
+          if (matches.length == 1) {
+            debugPrint('  find.byTooltip(\'${widget.message}\')');
+            continue;
+          }
+        }
+
+        if (element.widget is Text) {
+          assert(descendantText == null);
+          final Text widget = element.widget;
+          final Iterable<Element> matches = find.text(widget.data).evaluate();
+          descendantText = widget.data;
+          if (matches.length == 1) {
+            debugPrint('  find.text(\'${widget.data}\')');
+            continue;
+          }
+        }
+
+        if (element.widget.key is ValueKey<dynamic>) {
+          final ValueKey<dynamic> key = element.widget.key;
+          String keyLabel;
+          if (key is ValueKey<int> ||
+              key is ValueKey<double> ||
+              key is ValueKey<bool>) {
+            keyLabel = 'const ${element.widget.key.runtimeType}(${key.value})';
+          } else if (key is ValueKey<String>) {
+            keyLabel = 'const Key(\'${key.value}\')';
+          }
+          if (keyLabel != null) {
+            final Iterable<Element> matches = find.byKey(key).evaluate();
+            if (matches.length == 1) {
+              debugPrint('  find.byKey($keyLabel)');
+              continue;
+            }
+          }
+        }
+
+        if (!_isPrivate(element.widget.runtimeType)) {
+          if (numberOfTypes < 5) {
+            final Iterable<Element> matches = find.byType(element.widget.runtimeType).evaluate();
+            if (matches.length == 1) {
+              debugPrint('  find.byType(${element.widget.runtimeType})');
+              numberOfTypes += 1;
+              continue;
+            }
+          }
+
+          if (descendantText != null && numberOfWithTexts < 5) {
+            final Iterable<Element> matches = find.widgetWithText(element.widget.runtimeType, descendantText).evaluate();
+            if (matches.length == 1) {
+              debugPrint('  find.widgetWithText(${element.widget.runtimeType}, \'$descendantText\')');
+              numberOfWithTexts += 1;
+              continue;
+            }
+          }
+        }
+
+        if (!_isPrivate(element.runtimeType)) {
+          final Iterable<Element> matches = find.byElementType(element.runtimeType).evaluate();
+          if (matches.length == 1) {
+            debugPrint('  find.byElementType(${element.runtimeType})');
+            continue;
+          }
+        }
+
+        totalNumber -= 1; // if we got here, we didn't actually find something to say about it
+      }
+      if (totalNumber == 0)
+        debugPrint('  <could not come up with any unique finders>');
+    }
+  }
+
+  bool _isPrivate(Type type) {
+    // used above so that we don't suggest matchers for private types
+    return '_'.matchAsPrefix(type.toString()) != null;
   }
 
   /// Returns the exception most recently caught by the Flutter framework.
   ///
-  /// See [ElementTreeTester.takeException] for details.
+  /// See [TestWidgetsFlutterBinding.takeException] for details.
   dynamic takeException() {
-    return elementTreeTester.takeException();
+    return binding.takeException();
   }
 
-  /// Returns the fake implmentation of the event loop used by the test
-  /// environment.
+  /// Acts as if the application went idle.
   ///
-  /// Use it to travel into the future without actually waiting, control the
-  /// flushing of microtasks and timers.
-  FakeAsync get async => elementTreeTester.async;
-
   /// Runs all remaining microtasks, including those scheduled as a result of
   /// running them, until there are no more microtasks scheduled.
   ///
   /// Does not run timers. May result in an infinite loop or run out of memory
   /// if microtasks continue to recursively schedule new microtasks.
-  void flushMicrotasks() {
-    elementTreeTester.async.flushMicrotasks();
+  Future<Null> idle() {
+    return TestAsyncUtils.guard(() => binding.idle());
   }
 
-  /// Checks if the element identified by [finder] exists in the tree.
-  bool exists(Finder finder) => finder.find(this).isNotEmpty;
-
-  /// All widgets currently live on the UI returned in a depth-first traversal
-  /// order.
-  Iterable<Widget> get widgets {
-    return this.allElements.map((Element element) => element.widget);
-  }
-
-  /// Finds the first widget, searching in the depth-first traversal order.
-  Widget widget(Finder finder) {
-    return finder.findFirst(this).widget;
-  }
-
-  /// Finds the first state object, searching in the depth-first traversal order.
-  State/*=T*/ stateOf/*<T extends State>*/(Finder finder) {
-    Element element = finder.findFirst(this);
-    Widget widget = element.widget;
-
-    if (widget is StatefulWidget)
-      return (element as StatefulElement).state;
-
-    throw new ElementNotFoundError(
-      'Widget of type ${widget.runtimeType} found by ${finder.description} does not correspond to a StatefulWidget'
-    );
-  }
-
-  /// Finds the [Element] corresponding to the first widget found by [finder],
-  /// searching in the depth-first traversal order.
-  Element elementOf(Finder finder) => finder.findFirst(this);
-
-  /// Finds the [RenderObject] corresponding to the first widget found by
-  /// [finder], searching in the depth-first traversal order.
-  RenderObject renderObjectOf(Finder finder) => finder.findFirst(this).findRenderObject();
-
-  /// Emulates a tapping action at the center of the widget found by [finder].
-  void tap(Finder finder, { int pointer: 1 }) {
-    tapAt(getCenter(finder), pointer: pointer);
-  }
-
-  /// Emulates a tapping action at the given [location].
-  ///
-  /// See [ElementTreeTester.tapAt] for details.
-  void tapAt(Point location, { int pointer: 1 }) {
-    startGesture(location, pointer: pointer)
-      ..up();
-  }
-
-  /// Scrolls by dragging the center of a widget found by [finder] by [offset].
-  void scroll(Finder finder, Offset offset, { int pointer: 1 }) {
-    scrollAt(getCenter(finder), offset, pointer: pointer);
-  }
-
-  /// Scrolls by dragging the screen at [startLocation] by [offset].
-  ///
-  /// See [ElementTreeTester.scrollAt] for details.
-  void scrollAt(Point startLocation, Offset offset, { int pointer: 1 }) {
-    startGesture(startLocation, pointer: pointer)
-      ..moveBy(offset)
-      ..up();
-  }
-
-  /// Attempts a fling gesture starting at the center of a widget found by
-  /// [finder].
-  ///
-  /// See also [flingFrom].
-  void fling(Finder finder, Offset offset, double velocity, { int pointer: 1 }) {
-    flingFrom(getCenter(finder), offset, velocity, pointer: pointer);
-  }
-
-  /// Attempts a fling gesture starting at [startLocation], moving by [offset]
-  /// with the given [velocity].
-  ///
-  /// See [ElementTreeTester.flingFrom] for details.
-  void flingFrom(Point startLocation, Offset offset, double velocity, { int pointer: 1 }) {
-    elementTreeTester.flingFrom(startLocation, offset, velocity, pointer: pointer);
-    flushMicrotasks();
-  }
-
-  /// Begins a gesture at a particular point, and returns the
-  /// [TestGesture] object which you can use to continue the gesture.
-  TestGesture startGesture(Point downLocation, { int pointer: 1 }) {
-    TestGesture gesture = elementTreeTester.startGesture(downLocation, pointer: pointer)..async = async;
-    flushMicrotasks();
-    return gesture;
-  }
-
-  /// Returns the size of the element corresponding to the widget located by
-  /// [finder].
-  ///
-  /// This is only valid once the element's render object has been laid out at
-  /// least once.
-  Size getSize(Finder finder) {
-    assert(finder != null);
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getSize(element);
-  }
-
-  /// Returns the point at the center of the widget found by [finder].
-  Point getCenter(Finder finder) {
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getCenter(element);
-  }
-
-  /// Returns the point at the top left of the given element.
-  Point getTopLeft(Finder finder) {
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getTopLeft(element);
-  }
-
-  /// Returns the point at the top right of the given element. This
-  /// point is not inside the object's hit test area.
-  Point getTopRight(Finder finder) {
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getTopRight(element);
-  }
-
-  /// Returns the point at the bottom left of the given element. This
-  /// point is not inside the object's hit test area.
-  Point getBottomLeft(Finder finder) {
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getBottomLeft(element);
-  }
-
-  /// Returns the point at the bottom right of the given element. This
-  /// point is not inside the object's hit test area.
-  Point getBottomRight(Finder finder) {
-    Element element = finder.findFirst(this);
-    return elementTreeTester.getBottomRight(element);
-  }
-
-  /// Returns all elements ordered in a depth-first traversal fashion.
-  ///
-  /// The returned iterable is lazy. It does not walk the entire element tree
-  /// immediately, but rather a chunk at a time as the iteration progresses
-  /// using [Iterator.moveNext].
-  Iterable<Element> get allElements {
-    return new _DepthFirstChildIterable(binding.renderViewElement);
-  }
-}
-
-class _DepthFirstChildIterable extends IterableBase<Element> {
-  _DepthFirstChildIterable(this.rootElement);
-
-  Element rootElement;
+  Set<Ticker> _tickers;
 
   @override
-  Iterator<Element> get iterator => new _DepthFirstChildIterator(rootElement);
-}
-
-class _DepthFirstChildIterator implements Iterator<Element> {
-  _DepthFirstChildIterator(Element rootElement)
-      : _stack = _reverseChildrenOf(rootElement).toList();
-
-  Element _current;
-
-  final List<Element> _stack;
-
-  @override
-  Element get current => _current;
-
-  @override
-  bool moveNext() {
-    if (_stack.isEmpty)
-      return false;
-
-    _current = _stack.removeLast();
-    // Stack children in reverse order to traverse first branch first
-    _stack.addAll(_reverseChildrenOf(_current));
-
-    return true;
+  Ticker createTicker(TickerCallback onTick) {
+    _tickers ??= new Set<_TestTicker>();
+    final _TestTicker result = new _TestTicker(onTick, _removeTicker);
+    _tickers.add(result);
+    return result;
   }
 
-  static Iterable<Element> _reverseChildrenOf(Element element) {
-    final List<Element> children = <Element>[];
-    element.visitChildren(children.add);
-    return children.reversed;
-  }
-}
-
-/// A convenient accessor to frequently used finders.
-///
-/// Examples:
-///
-///     tester.tap(find.text('Save'));
-///     tester.widget(find.byType(MyWidget));
-///     tester.stateOf(find.byConfig(config));
-///     tester.getSize(find.byKey(new ValueKey('save-button')));
-const CommonFinders find = const CommonFinders._();
-
-/// Provides lightweight syntax for getting frequently used widget [Finder]s.
-///
-/// This class is instantiated once, as [find].
-class CommonFinders {
-  const CommonFinders._();
-
-  /// Finds [Text] widgets containing string equal to the `text`
-  /// argument.
-  ///
-  /// Example:
-  ///
-  ///     expect(tester, hasWidget(find.text('Back')));
-  Finder text(String text) => new _TextFinder(text);
-
-  /// Looks for widgets that contain a [Text] descendant with `text`
-  /// in it.
-  ///
-  /// Example:
-  ///
-  ///     // Suppose you have a button with text 'Update' in it:
-  ///     new Button(
-  ///       child: new Text('Update')
-  ///     )
-  ///
-  ///     // You can find and tap on it like this:
-  ///     tester.tap(find.widgetWithText(Button, 'Update'));
-  Finder widgetWithText(Type widgetType, String text) => new _WidgetWithTextFinder(widgetType, text);
-
-  /// Finds widgets by searching for one with a particular [Key].
-  ///
-  /// Example:
-  ///
-  ///     expect(tester, hasWidget(find.byKey(backKey)));
-  Finder byKey(Key key) => new _KeyFinder(key);
-
-  /// Finds widgets by searching for widgets with a particular type.
-  ///
-  /// The `type` argument must be a subclass of [Widget].
-  ///
-  /// Example:
-  ///
-  ///     expect(tester, hasWidget(find.byType(IconButton)));
-  Finder byType(Type type) => new _TypeFinder(type);
-
-  /// Finds widgets whose current widget is the instance given by the
-  /// argument.
-  ///
-  /// Example:
-  ///
-  ///     // Suppose you have a button created like this:
-  ///     Widget myButton = new Button(
-  ///       child: new Text('Update')
-  ///     );
-  ///
-  ///     // You can find and tap on it like this:
-  ///     tester.tap(find.byConfig(myButton));
-  Finder byConfig(Widget config) => new _ConfigFinder(config);
-
-  /// Finds widgets using a widget predicate.
-  ///
-  /// Example:
-  ///
-  ///     expect(tester, hasWidget(find.byWidgetPredicate(
-  ///       (Widget widget) => widget is Tooltip && widget.message == 'Back'
-  ///     )));
-  Finder byWidgetPredicate(WidgetPredicate predicate) => new _WidgetPredicateFinder(predicate);
-
-  /// Finds widgets using an element predicate.
-  ///
-  /// Example:
-  ///
-  ///     expect(tester, hasWidget(find.byWidgetPredicate(
-  ///       (Element element) => element is SingleChildRenderObjectElement
-  ///     )));
-  Finder byElementPredicate(ElementPredicate predicate) => new _ElementPredicateFinder(predicate);
-}
-
-/// Finds [Element]s inside the element tree.
-abstract class Finder {
-  /// Returns all the elements that match this finder's pattern,
-  /// using the given tester to determine which element tree to look at.
-  Iterable<Element> find(WidgetTester tester);
-
-  /// Describes what the finder is looking for. The description should be
-  /// a brief English noun phrase describing the finder's pattern.
-  String get description;
-
-  /// Returns the first value returned from [find], unless no value is found,
-  /// in which case it throws an [ElementNotFoundError].
-  Element findFirst(WidgetTester tester) {
-    Iterable<Element> results = find(tester);
-    return results.isNotEmpty
-      ? results.first
-      : throw new ElementNotFoundError.fromFinder(this);
+  void _removeTicker(_TestTicker ticker) {
+    assert(_tickers != null);
+    assert(_tickers.contains(ticker));
+    _tickers.remove(ticker);
   }
 
-  @override
-  String toString() => '[Finder for $description]';
-}
-
-/// Indicates that an attempt to find a widget within the current element tree
-/// failed.
-class ElementNotFoundError extends Error {
-  ElementNotFoundError(this.message);
-
-  ElementNotFoundError.fromFinder(Finder finder)
-      : message = 'Element not found by ${finder.description}';
-
-  final String message;
-
-  @override
-  String toString() => 'ElementNotFoundError: $message';
-}
-
-class _TextFinder extends Finder {
-  _TextFinder(this.text);
-
-  final String text;
-
-  @override
-  String get description => 'text "$text"';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where((Element element) {
-      if (element.widget is! Text)
-        return false;
-      Text textWidget = element.widget;
-      return textWidget.data == text;
-    });
-  }
-}
-
-class _WidgetWithTextFinder extends Finder {
-  _WidgetWithTextFinder(this.widgetType, this.text);
-
-  final Type widgetType;
-  final String text;
-
-  @override
-  String get description => 'type $widgetType with text "$text"';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements
-      .map((Element textElement) {
-        if (textElement.widget is! Text)
-          return null;
-
-        Text textWidget = textElement.widget;
-        if (textWidget.data == text) {
-          Element parent;
-          textElement.visitAncestorElements((Element element) {
-            if (element.widget.runtimeType == widgetType) {
-              parent = element;
-              return false;
-            }
-            return true;
-          });
-          return parent;
+  /// Throws an exception if any tickers created by the [WidgetTester] are still
+  /// active when the method is called.
+  ///
+  /// An argument can be specified to provide a string that will be used in the
+  /// error message. It should be an adverbial phrase describing the current
+  /// situation, such as "at the end of the test".
+  void verifyTickersWereDisposed([ String when = 'when none should have been' ]) {
+    assert(when != null);
+    if (_tickers != null) {
+      for (Ticker ticker in _tickers) {
+        if (ticker.isActive) {
+          throw new FlutterError(
+            'A Ticker was active $when.\n'
+            'All Tickers must be disposed. Tickers used by AnimationControllers '
+            'should be disposed by calling dispose() on the AnimationController itself. '
+            'Otherwise, the ticker will leak.\n'
+            'The offending ticker was: ${ticker.toString(debugIncludeStack: true)}'
+          );
         }
-
-        return null;
-      })
-      .where((Element element) => element != null);
+      }
+    }
   }
-}
 
-class _KeyFinder extends Finder {
-  _KeyFinder(this.key);
+  void _endOfTestVerifications() {
+    verifyTickersWereDisposed('at the end of the test');
+  }
 
-  final Key key;
+  /// Returns the TestTextInput singleton.
+  ///
+  /// Typical app tests will not need to use this value. To add text to widgets
+  /// like [TextField] or [TextFormField], call [enterText].
+  TestTextInput get testTextInput => binding.testTextInput;
 
-  @override
-  String get description => 'key $key';
+  /// Give the text input widget specified by [finder] the focus, as if the
+  /// onscreen keyboard had appeared.
+  ///
+  /// The widget specified by [finder] must be an [EditableText] or have
+  /// an [EditableText] descendant. For example `find.byType(TextField)`
+  /// or `find.byType(TextFormField)`, or `find.byType(EditableText)`.
+  ///
+  /// Tests that just need to add text to widgets like [TextField]
+  /// or [TextFormField] only need to call [enterText].
+  Future<Null> showKeyboard(Finder finder) async {
+    return TestAsyncUtils.guard(() async {
+      final EditableTextState editable = state(find.descendant(
+        of: finder,
+        matching: find.byType(EditableText),
+        matchRoot: true,
+      ));
+      if (editable != binding.focusedEditable) {
+        binding.focusedEditable = editable;
+        await pump();
+      }
+    });
+  }
 
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where((Element element) {
-      return element.widget.key == key;
+  /// Give the text input widget specified by [finder] the focus and
+  /// enter [text] as if it been provided by the onscreen keyboard.
+  ///
+  /// The widget specified by [finder] must be an [EditableText] or have
+  /// an [EditableText] descendant. For example `find.byType(TextField)`
+  /// or `find.byType(TextFormField)`, or `find.byType(EditableText)`.
+  ///
+  /// To just give [finder] the focus without entering any text,
+  /// see [showKeyboard].
+  Future<Null> enterText(Finder finder, String text) async {
+    return TestAsyncUtils.guard(() async {
+      await showKeyboard(finder);
+      testTextInput.enterText(text);
+      await idle();
     });
   }
 }
 
-class _TypeFinder extends Finder {
-  _TypeFinder(this.widgetType);
+typedef void _TickerDisposeCallback(_TestTicker ticker);
 
-  final Type widgetType;
+class _TestTicker extends Ticker {
+  _TestTicker(TickerCallback onTick, this._onDispose) : super(onTick);
 
-  @override
-  String get description => 'type "$widgetType"';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where((Element element) {
-      return element.widget.runtimeType == widgetType;
-    });
-  }
-}
-
-class _ConfigFinder extends Finder {
-  _ConfigFinder(this.config);
-
-  final Widget config;
+  _TickerDisposeCallback _onDispose;
 
   @override
-  String get description => 'the given configuration ($config)';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where((Element element) {
-      return element.widget == config;
-    });
-  }
-}
-
-class _WidgetPredicateFinder extends Finder {
-  _WidgetPredicateFinder(this.predicate);
-
-  final WidgetPredicate predicate;
-
-  @override
-  String get description => 'widget predicate ($predicate)';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where((Element element) {
-      return predicate(element.widget);
-    });
-  }
-}
-
-class _ElementPredicateFinder extends Finder {
-  _ElementPredicateFinder(this.predicate);
-
-  final ElementPredicate predicate;
-
-  @override
-  String get description => 'element predicate ($predicate)';
-
-  @override
-  Iterable<Element> find(WidgetTester tester) {
-    return tester.allElements.where(predicate);
-  }
-}
-
-/// Asserts that [finder] locates a widget in the test element tree.
-///
-/// Example:
-///
-///     expect(tester, hasWidget(find.text('Save')));
-Matcher hasWidget(Finder finder) => new _HasWidgetMatcher(finder);
-
-class _HasWidgetMatcher extends Matcher {
-  const _HasWidgetMatcher(this.finder);
-
-  final Finder finder;
-
-  @override
-  bool matches(WidgetTester tester, Map<dynamic, dynamic> matchState) {
-    return tester.exists(finder);
-  }
-
-  @override
-  Description describe(Description description) {
-    return description.add('$finder exists in the element tree');
-  }
-
-  @override
-  Description describeMismatch(
-      dynamic item, Description mismatchDescription, Map<dynamic, dynamic> matchState, bool verbose) {
-    return mismatchDescription.add('Does not contain $finder');
-  }
-}
-
-/// Asserts that [finder] does not locate a widget in the test element tree.
-/// Opposite of [hasWidget].
-///
-/// Example:
-///
-///     expect(tester, doesNotHaveWidget(find.text('Save')));
-Matcher doesNotHaveWidget(Finder finder) => new _DoesNotHaveWidgetMatcher(finder);
-
-class _DoesNotHaveWidgetMatcher extends Matcher {
-  const _DoesNotHaveWidgetMatcher(this.finder);
-
-  final Finder finder;
-
-  @override
-  bool matches(WidgetTester tester, Map<dynamic, dynamic> matchState) {
-    return !tester.exists(finder);
-  }
-
-  @override
-  Description describe(Description description) {
-    return description.add('$finder does not exist in the element tree');
-  }
-
-  @override
-  Description describeMismatch(
-      dynamic item, Description mismatchDescription, Map<dynamic, dynamic> matchState, bool verbose) {
-    return mismatchDescription.add('Contains $finder');
+  void dispose() {
+    if (_onDispose != null)
+      _onDispose(this);
+    super.dispose();
   }
 }

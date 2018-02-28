@@ -5,60 +5,82 @@
 import 'dart:async';
 
 import '../application_package.dart';
-import '../build_configuration.dart';
+import '../base/common.dart';
+import '../base/utils.dart';
+import '../build_info.dart';
 import '../globals.dart';
 import '../ios/mac.dart';
-import '../runner/flutter_command.dart';
+import 'build.dart';
 
-class BuildIOSCommand extends FlutterCommand {
-  BuildIOSCommand() {
+class BuildIOSCommand extends BuildSubCommand {
+  BuildIOSCommand({bool verboseHelp: false}) {
+    usesTargetOption();
+    usesFlavorOption();
+    usesPubOption();
+    argParser.addFlag('debug',
+      negatable: false,
+      help: 'Build a debug version of your app (default mode for iOS simulator builds).');
+    argParser.addFlag('profile',
+      negatable: false,
+      help: 'Build a version of your app specialized for performance profiling.');
+    argParser.addFlag('release',
+      negatable: false,
+      help: 'Build a release version of your app (default mode for device builds).');
     argParser.addFlag('simulator', help: 'Build for the iOS simulator instead of the device.');
     argParser.addFlag('codesign', negatable: true, defaultsTo: true,
         help: 'Codesign the application bundle (only available on device builds).');
+    argParser.addFlag('preview-dart-2', negatable: false,
+        hide: !verboseHelp);
   }
 
   @override
   final String name = 'ios';
 
   @override
-  final String description = 'Build an iOS application bundle (Mac OSX host only).';
+  final String description = 'Build an iOS application bundle (Mac OS X host only).';
 
   @override
-  Future<int> runInProject() async {
-    if (getCurrentHostPlatform() != HostPlatform.darwin_x64) {
-      printError('Building for iOS is only supported on the Mac.');
-      return 1;
-    }
+  Future<Null> runCommand() async {
+    final bool forSimulator = argResults['simulator'];
+    defaultBuildMode = forSimulator ? BuildMode.debug : BuildMode.release;
 
-    IOSApp app = applicationPackages.getPackageForPlatform(TargetPlatform.ios);
+    await super.runCommand();
+    if (getCurrentHostPlatform() != HostPlatform.darwin_x64)
+      throwToolExit('Building for iOS is only supported on the Mac.');
 
-    if (app == null) {
-      printError('Application not configured for iOS');
-      return 1;
-    }
+    final BuildableIOSApp app = await applicationPackages.getPackageForPlatform(TargetPlatform.ios);
 
-    bool forSimulator = argResults['simulator'];
-    bool shouldCodesign = argResults['codesign'];
+    if (app == null)
+      throwToolExit('Application not configured for iOS');
+
+    final bool shouldCodesign = argResults['codesign'];
 
     if (!forSimulator && !shouldCodesign) {
-      printStatus('Warning: Building for device with codesigning disabled.');
-      printStatus('You will have to manually codesign before deploying to device.');
+      printStatus('Warning: Building for device with codesigning disabled. You will '
+        'have to manually codesign before deploying to device.');
+    }
+    final BuildInfo buildInfo = getBuildInfo();
+    if (forSimulator && !buildInfo.supportsSimulator)
+      throwToolExit('${toTitleCase(buildInfo.modeName)} mode is not supported for simulators.');
+
+    final String logTarget = forSimulator ? 'simulator' : 'device';
+
+    final String typeName = artifacts.getEngineType(TargetPlatform.ios, buildInfo.mode);
+    printStatus('Building $app for $logTarget ($typeName)...');
+    final XcodeBuildResult result = await buildXcodeProject(
+      app: app,
+      buildInfo: buildInfo,
+      target: targetFile,
+      buildForDevice: !forSimulator,
+      codesign: shouldCodesign,
+    );
+
+    if (!result.success) {
+      await diagnoseXcodeBuildFailure(result);
+      throwToolExit('Encountered error while building for $logTarget.');
     }
 
-    String logTarget = forSimulator ? "simulator" : "device";
-
-    printStatus('Building $app for $logTarget...');
-
-    bool result = await buildIOSXcodeProject(app,
-        buildForDevice: !forSimulator, codesign: shouldCodesign);
-
-    if (!result) {
-      printError('Encountered error while building for $logTarget.');
-      return 1;
-    }
-
-    printStatus('Built in ios/.generated.');
-
-    return 0;
+    if (result.output != null)
+      printStatus('Built ${result.output}.');
   }
 }

@@ -4,91 +4,156 @@
 
 import 'dart:async';
 
-import 'package:usage/src/usage_impl_io.dart';
-import 'package:usage/usage.dart';
+import 'package:meta/meta.dart';
+import 'package:usage/usage_io.dart';
 
 import 'base/context.dart';
-import 'runner/version.dart';
+import 'base/file_system.dart';
+import 'base/os.dart';
+import 'base/platform.dart';
+import 'base/utils.dart';
+import 'globals.dart';
+import 'version.dart';
 
-// TODO(devoncarew): We'll need to do some work on the user agent in order to
-// correctly track usage by operating system (dart-lang/usage/issues/70).
+const String _kFlutterUA = 'UA-67589403-6';
 
-// TODO(devoncarew): We'll want to find a way to send (sanitized) command parameters.
-
-const String _kFlutterUA = 'UA-67589403-5';
+Usage get flutterUsage => Usage.instance;
 
 class Usage {
-  Usage() {
-    _analytics = new AnalyticsIO(_kFlutterUA, 'flutter', FlutterVersion.getVersionString());
+  /// Create a new Usage instance; [versionOverride] and [configDirOverride] are
+  /// used for testing.
+  Usage({ String settingsName: 'flutter', String versionOverride, String configDirOverride}) {
+    final FlutterVersion flutterVersion = FlutterVersion.instance;
+    final String version = versionOverride ?? flutterVersion.getVersionString(redactUnknownBranches: true);
+    _analytics = new AnalyticsIO(_kFlutterUA, settingsName, version,
+        // Analyzer doesn't recognize that [Directory] objects match up due to a
+        // conditional import.
+        // ignore: argument_type_not_assignable
+        documentDirectory: configDirOverride != null ? fs.directory(configDirOverride) : null);
+
+    // Report a more detailed OS version string than package:usage does by default.
+    _analytics.setSessionValue('cd1', os.name);
+    // Send the branch name as the "channel".
+    _analytics.setSessionValue('cd2', flutterVersion.getBranchName(redactUnknownBranches: true));
+    // Record the host as the application installer ID - the context that flutter_tools is running in.
+    if (platform.environment.containsKey('FLUTTER_HOST')) {
+      _analytics.setSessionValue('aiid', platform.environment['FLUTTER_HOST']);
+    }
     _analytics.analyticsOpt = AnalyticsOpt.optOut;
+
+    // Many CI systems don't do a full git checkout.
+    if (version.endsWith('/unknown') || isRunningOnBot) {
+      // If we think we're running on a CI system, suppress sending analytics.
+      suppressAnalytics = true;
+    }
   }
 
   /// Returns [Usage] active in the current app context.
-  static Usage get instance => context[Usage] ?? (context[Usage] = new Usage());
+  static Usage get instance => context.putIfAbsent(Usage, () => new Usage());
 
   Analytics _analytics;
+
+  bool _printedWelcome = false;
+  bool _suppressAnalytics = false;
 
   bool get isFirstRun => _analytics.firstRun;
 
   bool get enabled => _analytics.enabled;
+
+  bool get suppressAnalytics => _suppressAnalytics || _analytics.firstRun;
+
+  /// Suppress analytics for this session.
+  set suppressAnalytics(bool value) {
+    _suppressAnalytics = value;
+  }
 
   /// Enable or disable reporting analytics.
   set enabled(bool value) {
     _analytics.enabled = value;
   }
 
-  void sendCommand(String command) {
-    if (!isFirstRun)
-      _analytics.sendScreenView(command);
+  /// A stable randomly generated UUID used to deduplicate multiple identical
+  /// reports coming from the same computer.
+  String get clientId => _analytics.clientId;
+
+  void sendCommand(String command, { Map<String, String> parameters }) {
+    if (suppressAnalytics)
+      return;
+
+    parameters ??= const <String, String>{};
+
+    _analytics.sendScreenView(command, parameters: parameters);
   }
 
-  void sendEvent(String category, String parameter) {
-    if (!isFirstRun)
-      _analytics.sendEvent(category, parameter);
+  void sendEvent(String category, String parameter,
+      { Map<String, String> parameters }) {
+    if (suppressAnalytics)
+      return;
+
+    parameters ??= const <String, String>{};
+
+    _analytics.sendEvent(category, parameter, parameters: parameters);
   }
 
-  UsageTimer startTimer(String event) {
-    if (isFirstRun)
-      return new _MockUsageTimer();
-    else
-      return new UsageTimer._(event, _analytics.startTimer(event));
+  void sendTiming(
+    String category,
+    String variableName,
+    Duration duration, {
+    String label,
+    }) {
+    if (!suppressAnalytics) {
+      _analytics.sendTiming(
+        variableName,
+        duration.inMilliseconds,
+        category: category,
+        label: label,
+      );
+    }
   }
 
   void sendException(dynamic exception, StackTrace trace) {
-    if (!isFirstRun)
-      _analytics.sendException('${exception.runtimeType}; ${sanitizeStacktrace(trace)}');
+    if (!suppressAnalytics)
+      _analytics.sendException('${exception.runtimeType}\n${sanitizeStacktrace(trace)}');
   }
 
-  /// Fires whenever analytics data is sent over the network; public for testing.
+  /// Fires whenever analytics data is sent over the network.
+  @visibleForTesting
   Stream<Map<String, dynamic>> get onSend => _analytics.onSend;
 
   /// Returns when the last analytics event has been sent, or after a fixed
   /// (short) delay, whichever is less.
-  Future<Null> ensureAnalyticsSent() {
+  Future<Null> ensureAnalyticsSent() async {
     // TODO(devoncarew): This may delay tool exit and could cause some analytics
     // events to not be reported. Perhaps we could send the analytics pings
     // out-of-process from flutter_tools?
-    return _analytics.waitForLastPing(timeout: new Duration(milliseconds: 250));
+    await _analytics.waitForLastPing(timeout: const Duration(milliseconds: 250));
   }
-}
 
-class UsageTimer {
-  UsageTimer._(this.event, this._timer);
+  void printWelcome() {
+    // This gets called if it's the first run by the selected command, if any,
+    // and on exit, in case there was no command.
+    if (_printedWelcome)
+      return;
+    _printedWelcome = true;
 
-  final String event;
-  final AnalyticsTimer _timer;
-
-  void finish() {
-    _timer.finish();
+    printStatus('');
+    printStatus('''
+  ╔════════════════════════════════════════════════════════════════════════════╗
+  ║                 Welcome to Flutter! - https://flutter.io                   ║
+  ║                                                                            ║
+  ║ The Flutter tool anonymously reports feature usage statistics and crash    ║
+  ║ reports to Google in order to help Google contribute improvements to       ║
+  ║ Flutter over time.                                                         ║
+  ║                                                                            ║
+  ║ Read about data we send with crash reports:                                ║
+  ║ https://github.com/flutter/flutter/wiki/Flutter-CLI-crash-reporting        ║
+  ║                                                                            ║
+  ║ See Google's privacy policy:                                               ║
+  ║ https://www.google.com/intl/en/policies/privacy/                           ║
+  ║                                                                            ║
+  ║ Use "flutter config --no-analytics" to disable analytics and crash         ║
+  ║ reporting.                                                                 ║
+  ╚════════════════════════════════════════════════════════════════════════════╝
+  ''', emphasis: true);
   }
-}
-
-class _MockUsageTimer implements UsageTimer {
-  @override
-  String event;
-  @override
-  AnalyticsTimer _timer;
-
-  @override
-  void finish() { }
 }

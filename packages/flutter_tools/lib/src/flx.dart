@@ -3,416 +3,177 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:flx/bundle.dart';
-import 'package:flx/signing.dart';
-import 'package:json_schema/json_schema.dart';
-import 'package:path/path.dart' as path;
-import 'package:yaml/yaml.dart';
 
 import 'artifacts.dart';
-import 'base/file_system.dart' show ensureDirectoryExists;
+import 'asset.dart';
+import 'base/build.dart';
+import 'base/common.dart';
+import 'base/file_system.dart';
+import 'build_info.dart';
+import 'compile.dart';
+import 'dart/package_map.dart';
+import 'devfs.dart';
 import 'globals.dart';
-import 'package_map.dart';
-import 'toolchain.dart';
 import 'zip.dart';
 
 const String defaultMainPath = 'lib/main.dart';
 const String defaultAssetBasePath = '.';
-const String defaultManifestPath = 'flutter.yaml';
-const String defaultFlxOutputPath = 'build/app.flx';
-const String defaultSnapshotPath = 'build/snapshot_blob.bin';
-const String defaultDepfilePath = 'build/snapshot_blob.bin.d';
+const String defaultManifestPath = 'pubspec.yaml';
+String get defaultFlxOutputPath => fs.path.join(getBuildDirectory(), 'app.flx');
+String get defaultSnapshotPath => fs.path.join(getBuildDirectory(), 'snapshot_blob.bin');
+String get defaultDepfilePath => fs.path.join(getBuildDirectory(), 'snapshot_blob.bin.d');
+String get defaultApplicationKernelPath => fs.path.join(getBuildDirectory(), 'app.dill');
 const String defaultPrivateKeyPath = 'privatekey.der';
-const String defaultWorkingDirPath = 'build/flx';
 
+const String _kKernelKey = 'kernel_blob.bin';
 const String _kSnapshotKey = 'snapshot_blob.bin';
+const String _kDylibKey = 'libapp.so';
+const String _kPlatformKernelKey = 'platform.dill';
 
-const String _kFontSetMaterial = 'material';
-const String _kFontSetRoboto = 'roboto';
-
-class _Asset {
-  _Asset({ this.base, String assetEntry, this.relativePath, this.source }) {
-    this._assetEntry = assetEntry;
-  }
-
-  String _assetEntry;
-
-  final String base;
-
-  /// The entry to list in the generated asset manifest.
-  String get assetEntry => _assetEntry ?? relativePath;
-
-  /// Where the resource is on disk realtive to [base].
-  final String relativePath;
-
-  final String source;
-
-  /// The delta between what the assetEntry is and the relativePath (e.g.,
-  /// packages/material_gallery).
-  String get symbolicPrefix {
-    if (_assetEntry == null || _assetEntry == relativePath)
-      return null;
-    int index = _assetEntry.indexOf(relativePath);
-    return index == -1 ? null : _assetEntry.substring(0, index);
-  }
-
-  @override
-  String toString() => 'asset: $assetEntry';
-}
-
-Map<String, dynamic> _readMaterialFontsManifest() {
-  String fontsPath = path.join(path.absolute(ArtifactStore.flutterRoot),
-      'packages', 'flutter_tools', 'schema', 'material_fonts.yaml');
-
-  return loadYaml(new File(fontsPath).readAsStringSync());
-}
-
-final Map<String, dynamic> _materialFontsManifest = _readMaterialFontsManifest();
-
-List<Map<String, dynamic>> _getMaterialFonts(String fontSet) {
-  return _materialFontsManifest[fontSet];
-}
-
-List<_Asset> _getMaterialAssets(String fontSet) {
-  List<_Asset> result = <_Asset>[];
-
-  for (Map<String, dynamic> family in _getMaterialFonts(fontSet)) {
-    for (Map<String, dynamic> font in family['fonts']) {
-      String assetKey = font['asset'];
-      result.add(new _Asset(
-        base: '${ArtifactStore.flutterRoot}/bin/cache/artifacts/material_fonts',
-        source: path.basename(assetKey),
-        relativePath: assetKey
-      ));
-    }
-  }
-
-  return result;
-}
-
-/// Given an assetBase location and a flutter.yaml manifest, return a map of
-/// assets to asset variants.
-Map<_Asset, List<_Asset>> _parseAssets(
-  PackageMap packageMap,
-  Map<String, dynamic> manifestDescriptor,
-  String assetBase, {
-  List<String> excludeDirs: const <String>[]
-}) {
-  Map<_Asset, List<_Asset>> result = <_Asset, List<_Asset>>{};
-
-  if (manifestDescriptor == null)
-    return result;
-
-  excludeDirs = excludeDirs.map(
-    (String exclude) => path.absolute(exclude) + Platform.pathSeparator).toList();
-
-  if (manifestDescriptor.containsKey('assets')) {
-    for (String asset in manifestDescriptor['assets']) {
-      _Asset baseAsset = _resolveAsset(packageMap, assetBase, asset);
-
-      List<_Asset> variants = <_Asset>[];
-      result[baseAsset] = variants;
-
-      // Find asset variants
-      String assetPath = path.join(baseAsset.base, baseAsset.relativePath);
-      String assetFilename = path.basename(assetPath);
-      Directory assetDir = new Directory(path.dirname(assetPath));
-
-      List<FileSystemEntity> files = assetDir.listSync(recursive: true);
-
-      for (FileSystemEntity entity in files) {
-        if (!FileSystemEntity.isFileSync(entity.path))
-          continue;
-
-        // Exclude any files in the given directories.
-        if (excludeDirs.any((String exclude) => entity.path.startsWith(exclude)))
-          continue;
-
-        if (path.basename(entity.path) == assetFilename && entity.path != assetPath) {
-          String key = path.relative(entity.path, from: baseAsset.base);
-          String assetEntry;
-          if (baseAsset.symbolicPrefix != null)
-            assetEntry = path.join(baseAsset.symbolicPrefix, key);
-          variants.add(new _Asset(base: baseAsset.base, assetEntry: assetEntry, relativePath: key));
-        }
-      }
-    }
-  }
-
-  // Add assets referenced in the fonts section of the manifest.
-  if (manifestDescriptor.containsKey('fonts')) {
-    for (Map<String, dynamic> family in manifestDescriptor['fonts']) {
-      List<Map<String, dynamic>> fonts = family['fonts'];
-      if (fonts == null) continue;
-
-      for (Map<String, dynamic> font in fonts) {
-        String asset = font['asset'];
-        if (asset == null) continue;
-
-        _Asset baseAsset = new _Asset(base: assetBase, relativePath: asset);
-        result[baseAsset] = <_Asset>[];
-      }
-    }
-  }
-
-  return result;
-}
-
-_Asset _resolveAsset(PackageMap packageMap, String assetBase, String asset) {
-  if (asset.startsWith('packages/')) {
-    // Convert packages/flutter_gallery_assets/clouds-0.png to clouds-0.png.
-    String packageKey = asset.substring(9);
-    String relativeAsset = asset;
-
-    int index = packageKey.indexOf('/');
-    if (index != -1) {
-      relativeAsset = packageKey.substring(index + 1);
-      packageKey = packageKey.substring(0, index);
-    }
-
-    Uri uri = packageMap.map[packageKey];
-    if (uri != null && uri.scheme == 'file') {
-      File file = new File.fromUri(uri);
-      return new _Asset(base: file.path, assetEntry: asset, relativePath: relativeAsset);
-    }
-  }
-
-  return new _Asset(base: assetBase, relativePath: asset);
-}
-
-dynamic _loadManifest(String manifestPath) {
-  if (manifestPath == null || !FileSystemEntity.isFileSync(manifestPath))
-    return null;
-  String manifestDescriptor = new File(manifestPath).readAsStringSync();
-  return loadYaml(manifestDescriptor);
-}
-
-Future<int> _validateManifest(Object manifest) async {
-  String schemaPath = path.join(path.absolute(ArtifactStore.flutterRoot),
-      'packages', 'flutter_tools', 'schema', 'flutter_yaml.json');
-  Schema schema = await Schema.createSchemaFromUrl('file://$schemaPath');
-
-  Validator validator = new Validator(schema);
-  if (validator.validate(manifest))
-    return 0;
-
-  printError('Error in flutter.yaml:');
-  printError(validator.errors.join('\n'));
-  return 1;
-}
-
-ZipEntry _createAssetEntry(_Asset asset) {
-  String source = asset.source ?? asset.relativePath;
-  File file = new File('${asset.base}/$source');
-  if (!file.existsSync()) {
-    printError('Cannot find asset "$source" in directory "${path.absolute(asset.base)}".');
-    return null;
-  }
-  return new ZipEntry.fromFile(asset.assetEntry, file);
-}
-
-ZipEntry _createAssetManifest(Map<_Asset, List<_Asset>> assetVariants) {
-  Map<String, List<String>> json = <String, List<String>>{};
-  for (_Asset main in assetVariants.keys) {
-    List<String> variants = <String>[];
-    for (_Asset variant in assetVariants[main])
-      variants.add(variant.relativePath);
-    json[main.relativePath] = variants;
-  }
-  return new ZipEntry.fromString('AssetManifest.json', JSON.encode(json));
-}
-
-ZipEntry _createFontManifest(Map<String, dynamic> manifestDescriptor,
-                             bool usesMaterialDesign,
-                             bool includeRobotoFonts) {
-  List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[];
-  if (usesMaterialDesign) {
-    fonts.addAll(_getMaterialFonts(_kFontSetMaterial));
-    if (includeRobotoFonts)
-      fonts.addAll(_getMaterialFonts(_kFontSetRoboto));
-  }
-  if (manifestDescriptor != null && manifestDescriptor.containsKey('fonts'))
-    fonts.addAll(manifestDescriptor['fonts']);
-  if (fonts.isEmpty)
-    return null;
-  return new ZipEntry.fromString('FontManifest.json', JSON.encode(fonts));
-}
-
-/// Build the flx in the build/ directory and return `localBundlePath` on success.
-Future<String> buildFlx(
-  Toolchain toolchain, {
-  String mainPath: defaultMainPath,
-  bool includeRobotoFonts: true
-}) async {
-  int result;
-  String localBundlePath = path.join('build', 'app.flx');
-  String localSnapshotPath = path.join('build', 'snapshot_blob.bin');
-  result = await build(
-    toolchain,
-    snapshotPath: localSnapshotPath,
-    outputPath: localBundlePath,
-    mainPath: mainPath,
-    includeRobotoFonts: includeRobotoFonts
-  );
-  if (result == 0)
-    return localBundlePath;
-  else
-    throw result;
-}
-
-/// The result from [buildInTempDir]. Note that this object should be disposed after use.
-class DirectoryResult {
-  DirectoryResult(this.directory, this.localBundlePath);
-
-  final Directory directory;
-  final String localBundlePath;
-
-  /// Call this to delete the temporary directory.
-  void dispose() {
-    directory.deleteSync(recursive: true);
-  }
-}
-
-Future<int> build(
-  Toolchain toolchain, {
+Future<Null> build({
   String mainPath: defaultMainPath,
   String manifestPath: defaultManifestPath,
-  String outputPath: defaultFlxOutputPath,
-  String snapshotPath: defaultSnapshotPath,
-  String depfilePath: defaultDepfilePath,
+  String outputPath,
+  String snapshotPath,
+  String applicationKernelFilePath,
+  String depfilePath,
   String privateKeyPath: defaultPrivateKeyPath,
-  String workingDirPath: defaultWorkingDirPath,
+  String workingDirPath,
+  String packagesPath,
+  bool previewDart2 : false,
   bool precompiledSnapshot: false,
-  bool includeRobotoFonts: true
+  bool reportLicensedPackages: false,
+  bool trackWidgetCreation: false,
 }) async {
-  Object manifest = _loadManifest(manifestPath);
-  if (manifest != null) {
-    int result = await _validateManifest(manifest);
-    if (result != 0)
-      return result;
-  }
-  Map<String, dynamic> manifestDescriptor = manifest;
-
-  String assetBasePath = path.dirname(path.absolute(manifestPath));
-
+  outputPath ??= defaultFlxOutputPath;
+  snapshotPath ??= defaultSnapshotPath;
+  depfilePath ??= defaultDepfilePath;
+  workingDirPath ??= getAssetBuildDirectory();
+  packagesPath ??= fs.path.absolute(PackageMap.globalPackagesPath);
+  applicationKernelFilePath ??= defaultApplicationKernelPath;
   File snapshotFile;
 
-  if (!precompiledSnapshot) {
+  if (!precompiledSnapshot && !previewDart2) {
     ensureDirectoryExists(snapshotPath);
 
     // In a precompiled snapshot, the instruction buffer contains script
     // content equivalents
-    int result = await toolchain.compiler.createSnapshot(
+    final Snapshotter snapshotter = new Snapshotter();
+    final int result = await snapshotter.buildScriptSnapshot(
       mainPath: mainPath,
       snapshotPath: snapshotPath,
-      depfilePath: depfilePath
+      depfilePath: depfilePath,
+      packagesPath: packagesPath,
     );
-    if (result != 0) {
-      printError('Failed to run the Flutter compiler. Exit code: $result');
-      return result;
-    }
+    if (result != 0)
+      throwToolExit('Failed to run the Flutter compiler. Exit code: $result', exitCode: result);
 
-    snapshotFile = new File(snapshotPath);
+    snapshotFile = fs.file(snapshotPath);
   }
+
+  DevFSContent kernelContent;
+  if (!precompiledSnapshot && previewDart2) {
+    ensureDirectoryExists(applicationKernelFilePath);
+
+    final String kernelBinaryFilename = await compile(
+      sdkRoot: artifacts.getArtifactPath(Artifact.flutterPatchedSdkPath),
+      incrementalCompilerByteStorePath: fs.path.absolute(getIncrementalCompilerByteStoreDirectory()),
+      mainPath: fs.file(mainPath).absolute.path,
+      outputFilePath: applicationKernelFilePath,
+      trackWidgetCreation: trackWidgetCreation,
+    );
+    if (kernelBinaryFilename == null) {
+      throwToolExit('Compiler terminated unexpectedly on $mainPath');
+    }
+    kernelContent = new DevFSFileContent(fs.file(kernelBinaryFilename));
+  }
+
+  final AssetBundle assets = await buildAssets(
+    manifestPath: manifestPath,
+    workingDirPath: workingDirPath,
+    packagesPath: packagesPath,
+    reportLicensedPackages: reportLicensedPackages,
+  );
+  if (assets == null)
+    throwToolExit('Error building assets for $outputPath', exitCode: 1);
 
   return assemble(
-      manifestDescriptor: manifestDescriptor,
-      snapshotFile: snapshotFile,
-      assetBasePath: assetBasePath,
-      outputPath: outputPath,
-      privateKeyPath: privateKeyPath,
-      workingDirPath: workingDirPath,
-      includeRobotoFonts: includeRobotoFonts
-  );
+    assetBundle: assets,
+    kernelContent: kernelContent,
+    snapshotFile: snapshotFile,
+    outputPath: outputPath,
+    privateKeyPath: privateKeyPath,
+    workingDirPath: workingDirPath,
+  ).then((_) => null);
 }
 
-Future<int> assemble({
-  Map<String, dynamic> manifestDescriptor: const <String, dynamic>{},
-  File snapshotFile,
-  String assetBasePath: defaultAssetBasePath,
-  String outputPath: defaultFlxOutputPath,
-  String privateKeyPath: defaultPrivateKeyPath,
-  String workingDirPath: defaultWorkingDirPath,
-  bool includeRobotoFonts: true
+Future<AssetBundle> buildAssets({
+  String manifestPath,
+  String workingDirPath,
+  String packagesPath,
+  bool includeDefaultFonts: true,
+  bool reportLicensedPackages: false
 }) async {
+  workingDirPath ??= getAssetBuildDirectory();
+  packagesPath ??= fs.path.absolute(PackageMap.globalPackagesPath);
+
+  // Build the asset bundle.
+  final AssetBundle assetBundle = AssetBundleFactory.instance.createBundle();
+  final int result = await assetBundle.build(
+    manifestPath: manifestPath,
+    workingDirPath: workingDirPath,
+    packagesPath: packagesPath,
+    includeDefaultFonts: includeDefaultFonts,
+    reportLicensedPackages: reportLicensedPackages
+  );
+  if (result != 0)
+    return null;
+
+  return assetBundle;
+}
+
+Future<List<String>> assemble({
+  AssetBundle assetBundle,
+  DevFSContent kernelContent,
+  File snapshotFile,
+  File dylibFile,
+  String outputPath,
+  String privateKeyPath: defaultPrivateKeyPath,
+  String workingDirPath,
+}) async {
+  outputPath ??= defaultFlxOutputPath;
+  workingDirPath ??= getAssetBuildDirectory();
   printTrace('Building $outputPath');
 
-  Map<_Asset, List<_Asset>> assetVariants = _parseAssets(
-    new PackageMap(path.join(assetBasePath, '.packages')),
-    manifestDescriptor,
-    assetBasePath,
-    excludeDirs: <String>[workingDirPath, path.join(assetBasePath, 'build')]
-  );
+  final ZipBuilder zipBuilder = new ZipBuilder();
 
-  final bool usesMaterialDesign = manifestDescriptor != null &&
-    manifestDescriptor['uses-material-design'] == true;
+  // Add all entries from the asset bundle.
+  zipBuilder.entries.addAll(assetBundle.entries);
 
-  ZipBuilder zipBuilder = new ZipBuilder();
+  final List<String> fileDependencies = assetBundle.entries.values
+      .expand((DevFSContent content) => content.fileDependencies)
+      .toList();
 
+  if (kernelContent != null) {
+    final String platformKernelDill = artifacts.getArtifactPath(Artifact.platformKernelDill);
+    zipBuilder.entries[_kKernelKey] = kernelContent;
+    zipBuilder.entries[_kPlatformKernelKey] = new DevFSFileContent(fs.file(platformKernelDill));
+  }
   if (snapshotFile != null)
-    zipBuilder.addEntry(new ZipEntry.fromFile(_kSnapshotKey, snapshotFile));
-
-  for (_Asset asset in assetVariants.keys) {
-    ZipEntry assetEntry = _createAssetEntry(asset);
-    if (assetEntry == null)
-      return 1;
-    zipBuilder.addEntry(assetEntry);
-
-    for (_Asset variant in assetVariants[asset]) {
-      ZipEntry variantEntry = _createAssetEntry(variant);
-      if (variantEntry == null)
-        return 1;
-      zipBuilder.addEntry(variantEntry);
-    }
-  }
-
-  List<_Asset> materialAssets = <_Asset>[];
-  if (usesMaterialDesign) {
-    materialAssets.addAll(_getMaterialAssets(_kFontSetMaterial));
-    if (includeRobotoFonts)
-      materialAssets.addAll(_getMaterialAssets(_kFontSetRoboto));
-  }
-  for (_Asset asset in materialAssets) {
-    ZipEntry assetEntry = _createAssetEntry(asset);
-    if (assetEntry == null)
-      return 1;
-    zipBuilder.addEntry(assetEntry);
-  }
-
-  zipBuilder.addEntry(_createAssetManifest(assetVariants));
-
-  ZipEntry fontManifest = _createFontManifest(manifestDescriptor, usesMaterialDesign, includeRobotoFonts);
-  if (fontManifest != null)
-    zipBuilder.addEntry(fontManifest);
-
-  AsymmetricKeyPair<PublicKey, PrivateKey> keyPair = keyPairFromPrivateKeyFileSync(privateKeyPath);
-  printTrace('KeyPair from $privateKeyPath: $keyPair.');
-
-  if (keyPair != null) {
-    printTrace('Calling CipherParameters.seedRandom().');
-    CipherParameters.get().seedRandom();
-  }
-
-  File zipFile = new File(outputPath.substring(0, outputPath.length - 4) + '.zip');
-  printTrace('Encoding zip file to ${zipFile.path}');
-  zipBuilder.createZip(zipFile, new Directory(workingDirPath));
-  List<int> zipBytes = zipFile.readAsBytesSync();
+    zipBuilder.entries[_kSnapshotKey] = new DevFSFileContent(snapshotFile);
+  if (dylibFile != null)
+    zipBuilder.entries[_kDylibKey] = new DevFSFileContent(dylibFile);
 
   ensureDirectoryExists(outputPath);
 
-  printTrace('Creating flx at $outputPath.');
-  Bundle bundle = new Bundle.fromContent(
-    path: outputPath,
-    manifest: manifestDescriptor,
-    contentBytes: zipBytes,
-    keyPair: keyPair
-  );
-  bundle.writeSync();
+  printTrace('Encoding zip file to $outputPath');
+
+  // TODO(zarah): Remove the zipBuilder and write the files directly once FLX
+  // is deprecated.
+
+  await zipBuilder.createZip(fs.file(outputPath), fs.directory(workingDirPath));
 
   printTrace('Built $outputPath.');
 
-  return 0;
+  return fileDependencies;
 }

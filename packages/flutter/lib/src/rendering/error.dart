@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:ui' as ui show Paragraph, ParagraphBuilder, ParagraphStyle, TextStyle;
+import 'dart:ui' as ui show Paragraph, ParagraphBuilder, ParagraphConstraints, ParagraphStyle, TextStyle;
 
 import 'box.dart';
 import 'object.dart';
 
 const double _kMaxWidth = 100000.0;
 const double _kMaxHeight = 100000.0;
+
+// Line length to fit small phones without dynamically checking size.
+const String _kLine = '\n\n────────────────────\n\n';
 
 /// A render object used as a placeholder when an error occurs.
 ///
@@ -25,7 +28,7 @@ const double _kMaxHeight = 100000.0;
 /// Again to help simplify the class, this box tries to be 100000.0 pixels wide
 /// and high, to approximate being infinitely high but without using infinities.
 class RenderErrorBox extends RenderBox {
-  /// Constructs a RenderErrorBox render object.
+  /// Creates a RenderErrorBox render object.
   ///
   /// A message can optionally be provided. If a message is provided, an attempt
   /// will be made to render the message when the box paints.
@@ -40,12 +43,15 @@ class RenderErrorBox extends RenderBox {
         // Generally, the much better way to draw text in a RenderObject is to
         // use the TextPainter class. If you're looking for code to crib from,
         // see the paragraph.dart file and the RenderParagraph class.
-        ui.ParagraphBuilder builder = new ui.ParagraphBuilder();
+        final ui.ParagraphBuilder builder = new ui.ParagraphBuilder(paragraphStyle);
         builder.pushStyle(textStyle);
-        builder.addText(message);
-        _paragraph = builder.build(paragraphStyle);
+        builder.addText(
+          '$message$_kLine$message$_kLine$message$_kLine$message$_kLine$message$_kLine$message$_kLine'
+          '$message$_kLine$message$_kLine$message$_kLine$message$_kLine$message$_kLine$message'
+        );
+        _paragraph = builder.build();
       }
-    } catch (e) { }
+    } catch (e) { } // ignore: empty_catches
   }
 
   /// The message to attempt to display at paint time.
@@ -54,30 +60,20 @@ class RenderErrorBox extends RenderBox {
   ui.Paragraph _paragraph;
 
   @override
-  double getMinIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth(0.0);
+  double computeMaxIntrinsicWidth(double height) {
+    return _kMaxWidth;
   }
 
   @override
-  double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth(_kMaxWidth);
-  }
-
-  @override
-  double getMinIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(0.0);
-  }
-
-  @override
-  double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(_kMaxHeight);
+  double computeMaxIntrinsicHeight(double width) {
+    return _kMaxHeight;
   }
 
   @override
   bool get sizedByParent => true;
 
   @override
-  bool hitTestSelf(Point position) => true;
+  bool hitTestSelf(Offset position) => true;
 
   @override
   void performResize() {
@@ -89,32 +85,35 @@ class RenderErrorBox extends RenderBox {
 
   /// The text style to use when painting [RenderErrorBox] objects.
   static ui.TextStyle textStyle = new ui.TextStyle(
-    color: const Color(0xFFFFFF00),
+    color: const Color(0xFFFFFF66),
     fontFamily: 'monospace',
-    fontSize: 7.0
+    fontSize: 14.0,
+    fontWeight: FontWeight.bold
   );
 
   /// The paragraph style to use when painting [RenderErrorBox] objects.
   static ui.ParagraphStyle paragraphStyle = new ui.ParagraphStyle(
-    lineHeight: 0.25 // TODO(ianh): https://github.com/flutter/flutter/issues/2460 will affect this
+    lineHeight: 1.0,
   );
 
   @override
   void paint(PaintingContext context, Offset offset) {
     try {
       context.canvas.drawRect(offset & size, new Paint() .. color = backgroundColor);
+      double width;
       if (_paragraph != null) {
         // See the comment in the RenderErrorBox constructor. This is not the
         // code you want to be copying and pasting. :-)
         if (parent is RenderBox) {
-          RenderBox parentBox = parent;
-          _paragraph.maxWidth = parentBox.size.width;
+          final RenderBox parentBox = parent;
+          width = parentBox.size.width;
         } else {
-          _paragraph.maxWidth = size.width;
+          width = size.width;
         }
-        _paragraph.layout();
+        _paragraph.layout(new ui.ParagraphConstraints(width: width));
+
         context.canvas.drawParagraph(_paragraph, offset);
       }
-    } catch (e) { }
+    } catch (e) { } // ignore: empty_catches
   }
 }

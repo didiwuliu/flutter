@@ -2,21 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'package:flutter/foundation.dart';
+
 import 'basic.dart';
 import 'framework.dart';
 
 /// A widget that rebuilds when the given animation changes status.
 abstract class StatusTransitionWidget extends StatefulWidget {
-  StatusTransitionWidget({
+  /// Initializes fields for subclasses.
+  ///
+  /// The [animation] argument must not be null.
+  const StatusTransitionWidget({
     Key key,
-    this.animation
-  }) : super(key: key) {
-    assert(animation != null);
-  }
+    @required this.animation
+  }) : assert(animation != null),
+       super(key: key);
 
   /// The animation to which this widget is listening.
   final Animation<double> animation;
 
+  /// Override this method to build widgets that depend on the current status
+  /// of the animation.
   Widget build(BuildContext context);
 
   @override
@@ -27,20 +33,21 @@ class _StatusTransitionState extends State<StatusTransitionWidget> {
   @override
   void initState() {
     super.initState();
-    config.animation.addStatusListener(_animationStatusChanged);
+    widget.animation.addStatusListener(_animationStatusChanged);
   }
 
   @override
-  void didUpdateConfig(StatusTransitionWidget oldConfig) {
-    if (config.animation != oldConfig.animation) {
-      oldConfig.animation.removeStatusListener(_animationStatusChanged);
-      config.animation.addStatusListener(_animationStatusChanged);
+  void didUpdateWidget(StatusTransitionWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animation != oldWidget.animation) {
+      oldWidget.animation.removeStatusListener(_animationStatusChanged);
+      widget.animation.addStatusListener(_animationStatusChanged);
     }
   }
 
   @override
   void dispose() {
-    config.animation.removeStatusListener(_animationStatusChanged);
+    widget.animation.removeStatusListener(_animationStatusChanged);
     super.dispose();
   }
 
@@ -52,6 +59,6 @@ class _StatusTransitionState extends State<StatusTransitionWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return config.build(context);
+    return widget.build(context);
   }
 }

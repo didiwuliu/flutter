@@ -8,6 +8,11 @@ import '../globals.dart';
 import '../runner/flutter_command.dart';
 
 class PrecacheCommand extends FlutterCommand {
+  PrecacheCommand() {
+    argParser.addFlag('all-platforms', abbr: 'a', negatable: false,
+        help: 'Precache artifacts for all platforms.');
+  }
+
   @override
   final String name = 'precache';
 
@@ -15,15 +20,16 @@ class PrecacheCommand extends FlutterCommand {
   final String description = 'Populates the Flutter tool\'s cache of binary artifacts.';
 
   @override
-  bool get requiresProjectRoot => false;
+  bool get shouldUpdateCache => false;
 
   @override
-  Future<int> runInProject() async {
+  Future<Null> runCommand() async {
+    if (argResults['all-platforms'])
+      cache.includeAllPlatforms = true;
+
     if (cache.isUpToDate())
       printStatus('Already up-to-date.');
     else
       await cache.updateAll();
-
-    return 0;
   }
 }

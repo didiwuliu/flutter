@@ -4,7 +4,8 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:flutter_tools/src/base/io.dart';
 
 Process daemon;
 
@@ -12,11 +13,11 @@ Process daemon;
 //   version: print version
 //   shutdown: terminate the server
 //   start: start an app
-//   stopAll: stop any running app
+//   stop: stop a running app
 //   devices: list devices
 
 Future<Null> main() async {
-  daemon = await Process.start('dart', ['bin/flutter_tools.dart', 'daemon']);
+  daemon = await Process.start('dart', <String>['bin/flutter_tools.dart', 'daemon']);
   print('daemon process started, pid: ${daemon.pid}');
 
   daemon.stdout
@@ -27,23 +28,49 @@ Future<Null> main() async {
 
   stdout.write('> ');
   stdin.transform(UTF8.decoder).transform(const LineSplitter()).listen((String line) {
+    final List<String> words = line.split(' ');
+
     if (line == 'version' || line == 'v') {
-      _send({'method': 'daemon.version'});
+      _send(<String, dynamic>{'method': 'daemon.version'});
     } else if (line == 'shutdown' || line == 'q') {
-      _send({'method': 'daemon.shutdown'});
-    } else if (line == 'start') {
-      _send({'method': 'app.start'});
-    } else if (line == 'stopAll') {
-      _send({'method': 'app.stopAll'});
+      _send(<String, dynamic>{'method': 'daemon.shutdown'});
+    } else if (words.first == 'start') {
+      _send(<String, dynamic>{
+        'method': 'app.start',
+        'params': <String, dynamic> {
+          'deviceId': words[1],
+          'projectDirectory': words[2]
+        }
+      });
+    } else if (words.first == 'stop') {
+      if (words.length > 1) {
+        _send(<String, dynamic>{
+          'method': 'app.stop',
+          'params': <String, dynamic> { 'appId': words[1] }
+        });
+      } else {
+        _send(<String, dynamic>{'method': 'app.stop'});
+      }
+    } else if (words.first == 'restart') {
+      if (words.length > 1) {
+        _send(<String, dynamic>{
+          'method': 'app.restart',
+          'params': <String, dynamic> { 'appId': words[1] }
+        });
+      } else {
+        _send(<String, dynamic>{'method': 'app.restart'});
+      }
     } else if (line == 'devices') {
-      _send({'method': 'device.getDevices'});
+      _send(<String, dynamic>{'method': 'device.getDevices'});
+    } else if (line == 'enable') {
+      _send(<String, dynamic>{'method': 'device.enable'});
     } else {
-      print('command not understood: $line');
+      _send(<String, dynamic>{'method': line.trim()});
     }
     stdout.write('> ');
   });
 
-  daemon.exitCode.then((int code) {
+  daemon.exitCode.then<Null>((int code) {
     print('daemon exiting ($code)');
     exit(code);
   });
@@ -53,7 +80,7 @@ int id = 0;
 
 void _send(Map<String, dynamic> map) {
   map['id'] = id++;
-  String str = '[${JSON.encode(map)}]';
+  final String str = '[${JSON.encode(map)}]';
   daemon.stdin.writeln(str);
   print('==> $str');
 }

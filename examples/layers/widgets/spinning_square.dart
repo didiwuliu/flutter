@@ -9,7 +9,7 @@ class SpinningSquare extends StatefulWidget {
   _SpinningSquareState createState() => new _SpinningSquareState();
 }
 
-class _SpinningSquareState extends State<SpinningSquare> {
+class _SpinningSquareState extends State<SpinningSquare> with SingleTickerProviderStateMixin {
   AnimationController _animation;
 
   @override
@@ -19,8 +19,15 @@ class _SpinningSquareState extends State<SpinningSquare> {
     // represents an entire turn of the square whereas in the other examples
     // we used 0.0 -> math.PI, which is only half a turn.
     _animation = new AnimationController(
-      duration: const Duration(milliseconds: 3600)
+      duration: const Duration(milliseconds: 3600),
+      vsync: this,
     )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
   }
 
   @override
@@ -30,9 +37,7 @@ class _SpinningSquareState extends State<SpinningSquare> {
       child: new Container(
         width: 200.0,
         height: 200.0,
-        decoration: const BoxDecoration(
-          backgroundColor: const Color(0xFF00FF00)
-        )
+        color: const Color(0xFF00FF00),
       )
     );
   }

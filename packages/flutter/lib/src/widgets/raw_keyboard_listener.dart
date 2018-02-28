@@ -2,84 +2,113 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:sky_services/raw_keyboard/raw_keyboard.mojom.dart' as mojom;
-import 'package:sky_services/sky/input_event.mojom.dart' as mojom;
 
 import 'basic.dart';
+import 'focus_manager.dart';
 import 'framework.dart';
 
+/// A widget that calls a callback whenever the user presses or releases a key
+/// on a keyboard.
+///
+/// A [RawKeyboardListener] is useful for listening to raw key events and
+/// hardware buttons that are represented as keys. Typically used by games and
+/// other apps that use keyboards for purposes other than text entry.
+///
+/// For text entry, consider using a [EditableText], which integrates with
+/// on-screen keyboards and input method editors (IMEs).
+///
+/// See also:
+///
+///  * [EditableText], which should be used instead of this widget for text
+///    entry.
 class RawKeyboardListener extends StatefulWidget {
-  RawKeyboardListener({
+  /// Creates a widget that receives raw keyboard events.
+  ///
+  /// For text entry, consider using a [EditableText], which integrates with
+  /// on-screen keyboards and input method editors (IMEs).
+  const RawKeyboardListener({
     Key key,
-    this.focused: false,
-    this.onKey,
-    this.child
-  }) : super(key: key) {
-    assert(child != null);
-  }
+    @required this.focusNode,
+    @required this.onKey,
+    @required this.child,
+  }) : assert(focusNode != null),
+       assert(child != null),
+       super(key: key);
 
-  final bool focused;
+  /// Controls whether this widget has keyboard focus.
+  final FocusNode focusNode;
 
-  final ValueChanged<mojom.InputEvent> onKey;
+  /// Called whenever this widget receives a raw keyboard event.
+  final ValueChanged<RawKeyEvent> onKey;
 
   /// The widget below this widget in the tree.
+  ///
+  /// {@macro flutter.widgets.child}
   final Widget child;
 
   @override
   _RawKeyboardListenerState createState() => new _RawKeyboardListenerState();
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder description) {
+    super.debugFillProperties(description);
+    description.add(new DiagnosticsProperty<FocusNode>('focusNode', focusNode));
+  }
 }
 
-class _RawKeyboardListenerState extends State<RawKeyboardListener> implements mojom.RawKeyboardListener {
+class _RawKeyboardListenerState extends State<RawKeyboardListener> {
   @override
   void initState() {
     super.initState();
-    _attachOrDetachKeyboard();
+    widget.focusNode.addListener(_handleFocusChanged);
   }
 
-  mojom.RawKeyboardListenerStub _stub;
-
   @override
-  void didUpdateConfig(RawKeyboardListener oldConfig) {
-    _attachOrDetachKeyboard();
+  void didUpdateWidget(RawKeyboardListener oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusNode != oldWidget.focusNode) {
+      oldWidget.focusNode.removeListener(_handleFocusChanged);
+      widget.focusNode.addListener(_handleFocusChanged);
+    }
   }
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_handleFocusChanged);
     _detachKeyboardIfAttached();
     super.dispose();
   }
 
-  void _attachOrDetachKeyboard() {
-    if (config.focused)
+  void _handleFocusChanged() {
+    if (widget.focusNode.hasFocus)
       _attachKeyboardIfDetached();
     else
       _detachKeyboardIfAttached();
   }
 
+  bool _listening = false;
+
   void _attachKeyboardIfDetached() {
-    if (_stub != null)
+    if (_listening)
       return;
-    _stub = new mojom.RawKeyboardListenerStub.unbound()..impl = this;
-    mojom.RawKeyboardServiceProxy keyboard = new mojom.RawKeyboardServiceProxy.unbound();
-    shell.connectToViewAssociatedService(keyboard);
-    keyboard.ptr.addListener(_stub);
-    keyboard.close();
+    RawKeyboard.instance.addListener(_handleRawKeyEvent);
+    _listening = true;
   }
 
   void _detachKeyboardIfAttached() {
-    _stub?.close();
-    _stub = null;
+    if (!_listening)
+      return;
+    RawKeyboard.instance.removeListener(_handleRawKeyEvent);
+    _listening = false;
+  }
+
+  void _handleRawKeyEvent(RawKeyEvent event) {
+    if (widget.onKey != null)
+      widget.onKey(event);
   }
 
   @override
-  void onKey(mojom.InputEvent event) {
-    if (config.onKey != null)
-      config.onKey(event);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return config.child;
-  }
+  Widget build(BuildContext context) => widget.child;
 }

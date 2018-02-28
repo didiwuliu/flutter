@@ -9,36 +9,27 @@ class RenderSolidColorBox extends RenderDecoratedBox {
   final Size desiredSize;
   final Color backgroundColor;
 
-  RenderSolidColorBox(Color backgroundColor, { this.desiredSize: Size.infinite })
-      : backgroundColor = backgroundColor,
-        super(decoration: new BoxDecoration(backgroundColor: backgroundColor));
+  RenderSolidColorBox(this.backgroundColor, { this.desiredSize: Size.infinite })
+      : super(decoration: new BoxDecoration(color: backgroundColor));
 
   @override
-  double getMinIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainHeight(
-      this.desiredSize == Size.infinite ? 0.0 : desiredSize.width
-    );
+  double computeMinIntrinsicWidth(double height) {
+    return desiredSize.width == double.INFINITY ? 0.0 : desiredSize.width;
   }
 
   @override
-  double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth(
-      this.desiredSize == Size.infinite ? 0.0 : desiredSize.width
-    );
+  double computeMaxIntrinsicWidth(double height) {
+    return desiredSize.width == double.INFINITY ? 0.0 : desiredSize.width;
   }
 
   @override
-  double getMinIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(
-      this.desiredSize == Size.infinite ? 0.0 : desiredSize.height
-    );
+  double computeMinIntrinsicHeight(double width) {
+    return desiredSize.height == double.INFINITY ? 0.0 : desiredSize.height;
   }
 
   @override
-  double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(
-      this.desiredSize == Size.infinite ? 0.0 : desiredSize.height
-    );
+  double computeMaxIntrinsicHeight(double width) {
+    return desiredSize.height == double.INFINITY ? 0.0 : desiredSize.height;
   }
 
   @override
@@ -49,9 +40,9 @@ class RenderSolidColorBox extends RenderDecoratedBox {
   @override
   void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
     if (event is PointerDownEvent) {
-      decoration = new BoxDecoration(backgroundColor: const Color(0xFFFF0000));
+      decoration = const BoxDecoration(color: const Color(0xFFFF0000));
     } else if (event is PointerUpEvent) {
-      decoration = new BoxDecoration(backgroundColor: backgroundColor);
+      decoration = new BoxDecoration(color: backgroundColor);
     }
   }
 }

@@ -3,31 +3,46 @@
 // found in the LICENSE file.
 
 import 'dart:developer';
+import 'dart:io' show Platform;
 import 'dart:ui' as ui show Scene, SceneBuilder, window;
 
+import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math_64.dart';
 
+import 'binding.dart';
 import 'box.dart';
 import 'debug.dart';
 import 'layer.dart';
 import 'object.dart';
-import 'binding.dart';
 
 /// The layout constraints for the root render object.
+@immutable
 class ViewConfiguration {
+  /// Creates a view configuration.
+  ///
+  /// By default, the view has zero [size] and a [devicePixelRatio] of 1.0.
   const ViewConfiguration({
     this.size: Size.zero,
+    this.devicePixelRatio: 1.0,
     this.orientation
   });
 
   /// The size of the output surface.
   final Size size;
 
+  /// The pixel density of the output surface.
+  final double devicePixelRatio;
+
   /// The orientation of the output surface (aspirational).
   final int orientation;
 
+  /// Creates a transformation matrix that applies the [devicePixelRatio].
+  Matrix4 toMatrix() {
+    return new Matrix4.diagonal3Values(devicePixelRatio, devicePixelRatio, 1.0);
+  }
+
   @override
-  String toString() => '$size';
+  String toString() => '$size at ${devicePixelRatio}x';
 }
 
 /// The root of the render tree.
@@ -36,10 +51,17 @@ class ViewConfiguration {
 /// bootstrapping the rendering pipeline. The view has a unique child
 /// [RenderBox], which is required to fill the entire output surface.
 class RenderView extends RenderObject with RenderObjectWithChildMixin<RenderBox> {
+  /// Creates the root of the render tree.
+  ///
+  /// Typically created by the binding (e.g., [RendererBinding]).
+  ///
+  /// The [configuration] must not be null.
   RenderView({
     RenderBox child,
-    this.timeForRotation: const Duration(microseconds: 83333)
-  }) {
+    this.timeForRotation: const Duration(microseconds: 83333),
+    @required ViewConfiguration configuration,
+  }) : assert(configuration != null),
+       _configuration = configuration {
     this.child = child;
   }
 
@@ -57,23 +79,42 @@ class RenderView extends RenderObject with RenderObjectWithChildMixin<RenderBox>
   /// The constraints used for the root layout.
   ViewConfiguration get configuration => _configuration;
   ViewConfiguration _configuration;
-  void set configuration(ViewConfiguration value) {
+  /// The configuration is initially set by the `configuration` argument
+  /// passed to the constructor.
+  ///
+  /// Always call [scheduleInitialFrame] before changing the configuration.
+  set configuration(ViewConfiguration value) {
+    assert(value != null);
     if (configuration == value)
       return;
     _configuration = value;
+    replaceRootLayer(_updateMatricesAndCreateNewRootLayer());
+    assert(_rootTransform != null);
     markNeedsLayout();
   }
 
-  Matrix4 get _logicalToDeviceTransform {
-    double devicePixelRatio = ui.window.devicePixelRatio;
-    return new Matrix4.diagonal3Values(devicePixelRatio, devicePixelRatio, 1.0);
+  /// Bootstrap the rendering pipeline by scheduling the first frame.
+  ///
+  /// This should only be called once, and must be called before changing
+  /// [configuration]. It is typically called immediately after calling the
+  /// constructor.
+  void scheduleInitialFrame() {
+    assert(owner != null);
+    assert(_rootTransform == null);
+    scheduleInitialLayout();
+    scheduleInitialPaint(_updateMatricesAndCreateNewRootLayer());
+    assert(_rootTransform != null);
+    owner.requestVisualUpdate();
   }
 
-  /// Bootstrap the rendering pipeline by scheduling the first frame.
-  void scheduleInitialFrame() {
-    scheduleInitialLayout();
-    scheduleInitialPaint(new TransformLayer(transform: _logicalToDeviceTransform));
-    RendererBinding.instance.ensureVisualUpdate();
+  Matrix4 _rootTransform;
+
+  Layer _updateMatricesAndCreateNewRootLayer() {
+    _rootTransform = configuration.toMatrix();
+    final ContainerLayer rootLayer = new TransformLayer(transform: _rootTransform);
+    rootLayer.attach(this);
+    assert(_rootTransform != null);
+    return rootLayer;
   }
 
   // We never call layout() on this class, so this should never get
@@ -88,13 +129,14 @@ class RenderView extends RenderObject with RenderObjectWithChildMixin<RenderBox>
 
   @override
   void performLayout() {
+    assert(_rootTransform != null);
     if (configuration.orientation != _orientation) {
       if (_orientation != null && child != null)
         child.rotate(oldAngle: _orientation, newAngle: configuration.orientation, time: timeForRotation);
       _orientation = configuration.orientation;
     }
     _size = configuration.size;
-    assert(!_size.isInfinite);
+    assert(_size.isFinite);
 
     if (child != null)
       child.layout(new BoxConstraints.tight(_size));
@@ -105,7 +147,17 @@ class RenderView extends RenderObject with RenderObjectWithChildMixin<RenderBox>
     assert(false); // nobody tells the screen to rotate, the whole rotate() dance is started from our performResize()
   }
 
-  bool hitTest(HitTestResult result, { Point position }) {
+  /// Determines the set of render objects located at the given position.
+  ///
+  /// Returns true if the given point is contained in this render object or one
+  /// of its descendants. Adds any render objects that contain the point to the
+  /// given hit test result.
+  ///
+  /// The [position] argument is in the coordinate system of the render view,
+  /// which is to say, in logical pixels. This is not necessarily the same
+  /// coordinate system as that expected by the root [Layer], which will
+  /// normally be in physical (device) pixels.
+  bool hitTest(HitTestResult result, { Offset position }) {
     if (child != null)
       child.hitTest(result, position: position);
     result.add(new HitTestEntry(this));
@@ -121,41 +173,56 @@ class RenderView extends RenderObject with RenderObjectWithChildMixin<RenderBox>
       context.paintChild(child, offset);
   }
 
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    assert(_rootTransform != null);
+    transform.multiply(_rootTransform);
+    super.applyPaintTransform(child, transform);
+  }
+
   /// Uploads the composited layer tree to the engine.
   ///
   /// Actually causes the output of the rendering pipeline to appear on screen.
   void compositeFrame() {
-    Timeline.startSync('Compositing');
+    Timeline.startSync('Compositing', arguments: timelineWhitelistArguments);
     try {
-      final TransformLayer transformLayer = layer;
-      transformLayer.transform = _logicalToDeviceTransform;
-      ui.SceneBuilder builder = new ui.SceneBuilder();
-      transformLayer.addToScene(builder, Offset.zero);
-      assert(layer == transformLayer);
-      ui.Scene scene = builder.build();
+      final ui.SceneBuilder builder = new ui.SceneBuilder();
+      layer.addToScene(builder, Offset.zero);
+      final ui.Scene scene = builder.build();
       ui.window.render(scene);
       scene.dispose();
       assert(() {
-        if (debugRepaintRainbowEnabled)
-          debugCurrentRepaintColor = debugCurrentRepaintColor.withHue(debugCurrentRepaintColor.hue + debugRepaintRainbowHueIncrement);
+        if (debugRepaintRainbowEnabled || debugRepaintTextRainbowEnabled)
+          debugCurrentRepaintColor = debugCurrentRepaintColor.withHue(debugCurrentRepaintColor.hue + 2.0);
         return true;
-      });
+      }());
     } finally {
       Timeline.finishSync();
     }
   }
 
   @override
-  Rect get paintBounds => Point.origin & size;
+  Rect get paintBounds => Offset.zero & size;
 
   @override
-  Rect get semanticBounds => Point.origin & size;
+  Rect get semanticBounds {
+    assert(_rootTransform != null);
+    return MatrixUtils.transformRect(_rootTransform, Offset.zero & size);
+  }
 
   @override
-  void debugFillDescription(List<String> description) {
-    // call to ${super.debugFillDescription(prefix)} is omitted because the root superclasses don't include any interesting information for this class
-    description.add('window size: ${ui.window.size} (in device pixels)');
-    description.add('device pixel ratio: ${ui.window.devicePixelRatio} (device pixels per logical pixel)');
-    description.add('configuration: $configuration (in logical pixels)');
+  void debugFillProperties(DiagnosticPropertiesBuilder description) {
+    // call to ${super.debugFillProperties(description)} is omitted because the
+    // root superclasses don't include any interesting information for this
+    // class
+    assert(() {
+      description.add(new DiagnosticsNode.message('debug mode enabled - ${Platform.operatingSystem}'));
+      return true;
+    }());
+    description.add(new DiagnosticsProperty<Size>('window size', ui.window.physicalSize, tooltip: 'in physical pixels'));
+    description.add(new DoubleProperty('device pixel ratio', ui.window.devicePixelRatio, tooltip: 'physical pixels per logical pixel'));
+    description.add(new DiagnosticsProperty<ViewConfiguration>('configuration', configuration, tooltip: 'in logical pixels'));
+    if (ui.window.semanticsEnabled)
+      description.add(new DiagnosticsNode.message('semantics enabled'));
   }
 }

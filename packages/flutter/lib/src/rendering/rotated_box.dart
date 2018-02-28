@@ -4,7 +4,9 @@
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/painting.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 import 'box.dart';
@@ -18,18 +20,21 @@ const double _kQuarterTurnsInRadians = math.PI / 2.0;
 /// this object applies its rotation prior to layout, which means the entire
 /// rotated box consumes only as much space as required by the rotated child.
 class RenderRotatedBox extends RenderBox with RenderObjectWithChildMixin<RenderBox> {
+  /// Creates a rotated render box.
+  ///
+  /// The [quarterTurns] argument must not be null.
   RenderRotatedBox({
-    int quarterTurns,
+    @required int quarterTurns,
     RenderBox child
-  }) : _quarterTurns = quarterTurns {
-    assert(quarterTurns != null);
+  }) : assert(quarterTurns != null),
+       _quarterTurns = quarterTurns {
     this.child = child;
   }
 
   /// The number of clockwise quarter turns the child should be rotated.
   int get quarterTurns => _quarterTurns;
   int _quarterTurns;
-  void set quarterTurns(int value) {
+  set quarterTurns(int value) {
     assert(value != null);
     if (_quarterTurns == value)
       return;
@@ -40,35 +45,31 @@ class RenderRotatedBox extends RenderBox with RenderObjectWithChildMixin<RenderB
   bool get _isVertical => quarterTurns % 2 == 1;
 
   @override
-  double getMinIntrinsicWidth(BoxConstraints constraints) {
-    assert(constraints.debugAssertIsValid());
-    if (child != null)
-      return _isVertical ? child.getMinIntrinsicHeight(constraints.flipped) : child.getMinIntrinsicWidth(constraints);
-    return super.getMinIntrinsicWidth(constraints);
+  double computeMinIntrinsicWidth(double height) {
+    if (child == null)
+      return 0.0;
+    return _isVertical ? child.getMinIntrinsicHeight(height) : child.getMinIntrinsicWidth(height);
   }
 
   @override
-  double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    assert(constraints.debugAssertIsValid());
-    if (child != null)
-      return _isVertical ? child.getMaxIntrinsicHeight(constraints.flipped) : child.getMaxIntrinsicWidth(constraints);
-    return super.getMaxIntrinsicWidth(constraints);
+  double computeMaxIntrinsicWidth(double height) {
+    if (child == null)
+      return 0.0;
+    return _isVertical ? child.getMaxIntrinsicHeight(height) : child.getMaxIntrinsicWidth(height);
   }
 
   @override
-  double getMinIntrinsicHeight(BoxConstraints constraints) {
-    assert(constraints.debugAssertIsValid());
-    if (child != null)
-      return _isVertical ? child.getMinIntrinsicWidth(constraints.flipped) : child.getMinIntrinsicHeight(constraints);
-    return super.getMinIntrinsicHeight(constraints);
+  double computeMinIntrinsicHeight(double width) {
+    if (child == null)
+      return 0.0;
+    return _isVertical ? child.getMinIntrinsicWidth(width) : child.getMinIntrinsicHeight(width);
   }
 
   @override
-  double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    assert(constraints.debugAssertIsValid());
-    if (child != null)
-      return _isVertical ? child.getMaxIntrinsicWidth(constraints.flipped) : child.getMaxIntrinsicHeight(constraints);
-    return super.getMaxIntrinsicHeight(constraints);
+  double computeMaxIntrinsicHeight(double width) {
+    if (child == null)
+      return 0.0;
+    return _isVertical ? child.getMaxIntrinsicWidth(width) : child.getMaxIntrinsicHeight(width);
   }
 
   Matrix4 _paintTransform;
@@ -89,14 +90,12 @@ class RenderRotatedBox extends RenderBox with RenderObjectWithChildMixin<RenderB
   }
 
   @override
-  bool hitTestChildren(HitTestResult result, { Point position }) {
-    assert(_paintTransform != null || needsLayout || child == null);
+  bool hitTestChildren(HitTestResult result, { Offset position }) {
+    assert(_paintTransform != null || debugNeedsLayout || child == null);
     if (child == null || _paintTransform == null)
       return false;
-    Matrix4 inverse = new Matrix4.inverted(_paintTransform);
-    Vector3 position3 = new Vector3(position.x, position.y, 0.0);
-    Vector3 transformed3 = inverse.transform3(position3);
-    return child.hitTest(result, position: new Point(transformed3.x, transformed3.y));
+    final Matrix4 inverse = new Matrix4.inverted(_paintTransform);
+    return child.hitTest(result, position: MatrixUtils.transformPoint(inverse, position));
   }
 
   void _paintChild(PaintingContext context, Offset offset) {

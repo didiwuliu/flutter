@@ -3,153 +3,274 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
+import 'dart:convert' show LineSplitter;
 
-final _AnsiTerminal _terminal = new _AnsiTerminal();
+import 'package:meta/meta.dart';
+
+import 'io.dart';
+import 'terminal.dart';
+import 'utils.dart';
 
 abstract class Logger {
   bool get isVerbose => false;
 
+  bool quiet = false;
+
+  bool get supportsColor => terminal.supportsColor;
   set supportsColor(bool value) {
-    _terminal.supportsColor = value;
+    terminal.supportsColor = value;
   }
 
   /// Display an error level message to the user. Commands should use this if they
   /// fail in some way.
-  void printError(String message, [StackTrace stackTrace]);
+  void printError(String message, { StackTrace stackTrace, bool emphasis: false });
 
   /// Display normal output of the command. This should be used for things like
   /// progress messages, success messages, or just normal command output.
-  void printStatus(String message);
+  void printStatus(
+    String message,
+    { bool emphasis: false, bool newline: true, String ansiAlternative, int indent }
+  );
 
   /// Use this for verbose tracing output. Users can turn this output on in order
   /// to help diagnose issues with the toolchain or with their setup.
   void printTrace(String message);
 
   /// Start an indeterminate progress display.
-  Status startProgress(String message);
-
-  /// Flush any buffered output.
-  void flush() { }
+  ///
+  /// [message] is the message to display to the user; [progressId] provides an ID which can be
+  /// used to identify this type of progress (`hot.reload`, `hot.restart`, ...).
+  ///
+  /// [progressIndicatorPadding] can optionally be used to specify spacing
+  /// between the [message] and the progress indicator.
+  Status startProgress(
+    String message, {
+    String progressId,
+    bool expectSlowOperation: false,
+    int progressIndicatorPadding: 52,
+  });
 }
 
 class Status {
-  void stop({ bool showElapsedTime: false }) { }
+  void stop() { }
   void cancel() { }
 }
 
+typedef void _FinishCallback();
+
 class StdoutLogger extends Logger {
+
   Status _status;
 
   @override
   bool get isVerbose => false;
 
   @override
-  void printError(String message, [StackTrace stackTrace]) {
+  void printError(String message, { StackTrace stackTrace, bool emphasis: false }) {
     _status?.cancel();
     _status = null;
 
+    if (emphasis)
+      message = terminal.bolden(message);
     stderr.writeln(message);
     if (stackTrace != null)
-      stderr.writeln(stackTrace);
+      stderr.writeln(stackTrace.toString());
   }
 
   @override
-  void printStatus(String message) {
+  void printStatus(
+    String message,
+    { bool emphasis: false, bool newline: true, String ansiAlternative, int indent }
+  ) {
     _status?.cancel();
     _status = null;
+    if (terminal.supportsColor && ansiAlternative != null)
+      message = ansiAlternative;
+    if (emphasis)
+      message = terminal.bolden(message);
+    if (indent != null && indent > 0)
+      message = LineSplitter.split(message).map((String line) => ' ' * indent + line).join('\n');
+    if (newline)
+      message = '$message\n';
+    writeToStdOut(message);
+  }
 
-    print(message);
+  @protected
+  void writeToStdOut(String message) {
+    stdout.write(message);
   }
 
   @override
   void printTrace(String message) { }
 
   @override
-  Status startProgress(String message) {
-    _status?.cancel();
-    _status = null;
-
-    if (_terminal.supportsColor) {
-      _status = new _AnsiStatus(message);
-      return _status;
-    } else {
-      printStatus(message);
+  Status startProgress(
+    String message, {
+    String progressId,
+    bool expectSlowOperation: false,
+    int progressIndicatorPadding: 52,
+  }) {
+    if (_status != null) {
+      // Ignore nested progresses; return a no-op status object.
       return new Status();
+    } else {
+      if (supportsColor) {
+        _status = new _AnsiStatus(
+          message,
+          expectSlowOperation,
+          () { _status = null; },
+          progressIndicatorPadding,
+        );
+        return _status;
+      } else {
+        printStatus(message);
+        return new Status();
+      }
     }
   }
+}
+
+/// A [StdoutLogger] which replaces Unicode characters that cannot be printed to
+/// the Windows console with alternative symbols.
+///
+/// By default, Windows uses either "Consolas" or "Lucida Console" as fonts to
+/// render text in the console. Both fonts only have a limited character set.
+/// Unicode characters, that are not available in either of the two default
+/// fonts, should be replaced by this class with printable symbols. Otherwise,
+/// they will show up as the unrepresentable character symbol '�'.
+class WindowsStdoutLogger extends StdoutLogger {
 
   @override
-  void flush() { }
+  void writeToStdOut(String message) {
+    stdout.write(message
+        .replaceAll('✗', 'X')
+        .replaceAll('✓', '√')
+    );
+  }
 }
 
 class BufferLogger extends Logger {
   @override
   bool get isVerbose => false;
 
-  StringBuffer _error = new StringBuffer();
-  StringBuffer _status = new StringBuffer();
-  StringBuffer _trace = new StringBuffer();
+  final StringBuffer _error = new StringBuffer();
+  final StringBuffer _status = new StringBuffer();
+  final StringBuffer _trace = new StringBuffer();
 
   String get errorText => _error.toString();
   String get statusText => _status.toString();
   String get traceText => _trace.toString();
 
   @override
-  void printError(String message, [StackTrace stackTrace]) => _error.writeln(message);
+  void printError(String message, { StackTrace stackTrace, bool emphasis: false }) {
+    _error.writeln(message);
+  }
 
   @override
-  void printStatus(String message) => _status.writeln(message);
+  void printStatus(
+    String message,
+    { bool emphasis: false, bool newline: true, String ansiAlternative, int indent }
+  ) {
+    if (newline)
+      _status.writeln(message);
+    else
+      _status.write(message);
+  }
 
   @override
   void printTrace(String message) => _trace.writeln(message);
 
   @override
-  Status startProgress(String message) {
+  Status startProgress(
+    String message, {
+    String progressId,
+    bool expectSlowOperation: false,
+    int progressIndicatorPadding: 52,
+  }) {
     printStatus(message);
     return new Status();
   }
 
-  @override
-  void flush() { }
+  /// Clears all buffers.
+  void clear() {
+    _error.clear();
+    _status.clear();
+    _trace.clear();
+  }
 }
 
 class VerboseLogger extends Logger {
-  _LogMessage lastMessage;
+  VerboseLogger(this.parent)
+    : assert(terminal != null) {
+    stopwatch.start();
+  }
+
+  final Logger parent;
+
+  Stopwatch stopwatch = new Stopwatch();
 
   @override
   bool get isVerbose => true;
 
   @override
-  void printError(String message, [StackTrace stackTrace]) {
-    _emit();
-    lastMessage = new _LogMessage(_LogType.error, message, stackTrace);
+  void printError(String message, { StackTrace stackTrace, bool emphasis: false }) {
+    _emit(_LogType.error, message, stackTrace);
   }
 
   @override
-  void printStatus(String message) {
-    _emit();
-    lastMessage = new _LogMessage(_LogType.status, message);
+  void printStatus(
+    String message,
+    { bool emphasis: false, bool newline: true, String ansiAlternative, int indent }
+  ) {
+    _emit(_LogType.status, message);
   }
 
   @override
   void printTrace(String message) {
-    _emit();
-    lastMessage = new _LogMessage(_LogType.trace, message);
+    _emit(_LogType.trace, message);
   }
 
   @override
-  Status startProgress(String message) {
+  Status startProgress(
+    String message, {
+    String progressId,
+    bool expectSlowOperation: false,
+    int progressIndicatorPadding: 52,
+  }) {
     printStatus(message);
     return new Status();
   }
 
-  @override
-  void flush() => _emit();
+  void _emit(_LogType type, String message, [StackTrace stackTrace]) {
+    if (message.trim().isEmpty)
+      return;
 
-  void _emit() {
-    lastMessage?.emit();
-    lastMessage = null;
+    final int millis = stopwatch.elapsedMilliseconds;
+    stopwatch.reset();
+
+    String prefix;
+    const int prefixWidth = 8;
+    if (millis == 0) {
+      prefix = ''.padLeft(prefixWidth);
+    } else {
+      prefix = '+$millis ms'.padLeft(prefixWidth);
+      if (millis >= 100)
+        prefix = terminal.bolden(prefix);
+    }
+    prefix = '[$prefix] ';
+
+    final String indent = ''.padLeft(prefix.length);
+    final String indentMessage = message.replaceAll('\n', '\n$indent');
+
+    if (type == _LogType.error) {
+      parent.printError(prefix + terminal.bolden(indentMessage));
+      if (stackTrace != null)
+        parent.printError(indent + stackTrace.toString().replaceAll('\n', '\n$indent'));
+    } else if (type == _LogType.status) {
+      parent.printStatus(prefix + terminal.bolden(indentMessage));
+    } else {
+      parent.printStatus(prefix + indentMessage);
+    }
   }
 }
 
@@ -159,67 +280,21 @@ enum _LogType {
   trace
 }
 
-class _LogMessage {
-  _LogMessage(this.type, this.message, [this.stackTrace]) {
-    stopwatch.start();
-  }
-
-  final _LogType type;
-  final String message;
-  final StackTrace stackTrace;
-
-  Stopwatch stopwatch = new Stopwatch();
-
-  void emit() {
-    stopwatch.stop();
-
-    int millis = stopwatch.elapsedMilliseconds;
-    String prefix = '${millis.toString().padLeft(4)} ms • ';
-    String indent = ''.padLeft(prefix.length);
-    if (millis >= 100)
-      prefix = _terminal.writeBold(prefix.substring(0, prefix.length - 3)) + ' • ';
-    String indentMessage = message.replaceAll('\n', '\n$indent');
-
-    if (type == _LogType.error) {
-      stderr.writeln(prefix + _terminal.writeBold(indentMessage));
-      if (stackTrace != null)
-        stderr.writeln(indent + stackTrace.toString().replaceAll('\n', '\n$indent'));
-    } else if (type == _LogType.status) {
-      print(prefix + _terminal.writeBold(indentMessage));
-    } else {
-      print(prefix + indentMessage);
-    }
-  }
-}
-
-class _AnsiTerminal {
-  _AnsiTerminal() {
-    // TODO(devoncarew): This detection does not work for Windows.
-    String term = Platform.environment['TERM'];
-    supportsColor = term != null && term != 'dumb';
-  }
-
-  static const String _bold = '\u001B[1m';
-  static const String _reset = '\u001B[0m';
-
-  bool supportsColor;
-
-  String writeBold(String str) => supportsColor ? '$_bold$str$_reset' : str;
-}
-
 class _AnsiStatus extends Status {
-  _AnsiStatus(this.message) {
+  _AnsiStatus(this.message, this.expectSlowOperation, this.onFinish, int padding) {
     stopwatch = new Stopwatch()..start();
 
-    stdout.write('${message.padRight(51)}     ');
+    stdout.write('${message.padRight(padding)}     ');
     stdout.write('${_progress[0]}');
 
-    timer = new Timer.periodic(new Duration(milliseconds: 100), _callback);
+    timer = new Timer.periodic(const Duration(milliseconds: 100), _callback);
   }
 
   static final List<String> _progress = <String>['-', r'\', '|', r'/', '-', r'\', '|', '/'];
 
   final String message;
+  final bool expectSlowOperation;
+  final _FinishCallback onFinish;
   Stopwatch stopwatch;
   Timer timer;
   int index = 1;
@@ -231,16 +306,17 @@ class _AnsiStatus extends Status {
   }
 
   @override
-  void stop({ bool showElapsedTime: false }) {
+  void stop() {
+    onFinish();
+
     if (!live)
       return;
     live = false;
 
-    if (showElapsedTime) {
-      double seconds = stopwatch.elapsedMilliseconds / 1000.0;
-      print('\b\b\b\b${seconds.toStringAsFixed(1)}s');
+    if (expectSlowOperation) {
+      print('\b\b\b\b\b${getElapsedAsSeconds(stopwatch.elapsed).padLeft(5)}');
     } else {
-      print('\b ');
+      print('\b\b\b\b\b${getElapsedAsMilliseconds(stopwatch.elapsed).padLeft(5)}');
     }
 
     timer.cancel();
@@ -248,6 +324,8 @@ class _AnsiStatus extends Status {
 
   @override
   void cancel() {
+    onFinish();
+
     if (!live)
       return;
     live = false;

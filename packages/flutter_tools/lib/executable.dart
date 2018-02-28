@@ -3,189 +3,75 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
 
-import 'package:args/command_runner.dart';
-import 'package:path/path.dart' as path;
-import 'package:stack_trace/stack_trace.dart';
-
-import 'src/base/context.dart';
-import 'src/base/logger.dart';
-import 'src/base/process.dart';
-import 'src/base/utils.dart';
+import 'runner.dart' as runner;
 import 'src/commands/analyze.dart';
 import 'src/commands/build.dart';
+import 'src/commands/channel.dart';
+import 'src/commands/clean.dart';
 import 'src/commands/config.dart';
 import 'src/commands/create.dart';
 import 'src/commands/daemon.dart';
 import 'src/commands/devices.dart';
 import 'src/commands/doctor.dart';
 import 'src/commands/drive.dart';
+import 'src/commands/format.dart';
+import 'src/commands/fuchsia_reload.dart';
+import 'src/commands/ide_config.dart';
+import 'src/commands/inject_plugins.dart';
 import 'src/commands/install.dart';
-import 'src/commands/listen.dart';
 import 'src/commands/logs.dart';
+import 'src/commands/packages.dart';
 import 'src/commands/precache.dart';
-import 'src/commands/refresh.dart';
 import 'src/commands/run.dart';
-import 'src/commands/run_mojo.dart';
 import 'src/commands/screenshot.dart';
-import 'src/commands/skia.dart';
 import 'src/commands/stop.dart';
 import 'src/commands/test.dart';
 import 'src/commands/trace.dart';
 import 'src/commands/update_packages.dart';
 import 'src/commands/upgrade.dart';
-import 'src/device.dart';
-import 'src/doctor.dart';
-import 'src/globals.dart';
-import 'src/runner/flutter_command_runner.dart';
+import 'src/runner/flutter_command.dart';
 
 /// Main entry point for commands.
 ///
-/// This function is intended to be used from the [flutter] command line tool.
+/// This function is intended to be used from the `flutter` command line tool.
 Future<Null> main(List<String> args) async {
-  bool help = args.contains('-h') || args.contains('--help');
-  bool verbose = args.contains('-v') || args.contains('--verbose');
-  bool verboseHelp = help && verbose;
+  final bool verbose = args.contains('-v') || args.contains('--verbose');
 
-  if (verboseHelp) {
-    // Remove the verbose option; for help, users don't need to see verbose logs.
-    args = new List<String>.from(args);
-    args.removeWhere((String option) => option == '-v' || option == '--verbose');
-  }
+  final bool doctor = (args.isNotEmpty && args.first == 'doctor') ||
+      (args.length == 2 && verbose && args.last == 'doctor');
+  final bool help = args.contains('-h') || args.contains('--help') ||
+      (args.isNotEmpty && args.first == 'help') || (args.length == 1 && verbose);
+  final bool muteCommandLogging = help || doctor;
+  final bool verboseHelp = help && verbose;
 
-  FlutterCommandRunner runner = new FlutterCommandRunner(verboseHelp: verboseHelp)
-    ..addCommand(new AnalyzeCommand())
-    ..addCommand(new BuildCommand())
-    ..addCommand(new ConfigCommand())
-    ..addCommand(new CreateCommand())
-    ..addCommand(new DaemonCommand(hidden: !verboseHelp))
-    ..addCommand(new DevicesCommand())
-    ..addCommand(new DoctorCommand())
-    ..addCommand(new DriveCommand())
-    ..addCommand(new InstallCommand())
-    ..addCommand(new ListenCommand())
-    ..addCommand(new LogsCommand())
-    ..addCommand(new PrecacheCommand())
-    ..addCommand(new RefreshCommand())
-    ..addCommand(new RunCommand())
-    ..addCommand(new RunMojoCommand(hidden: !verboseHelp))
-    ..addCommand(new ScreenshotCommand())
-    ..addCommand(new SkiaCommand())
-    ..addCommand(new StopCommand())
-    ..addCommand(new TestCommand())
-    ..addCommand(new TraceCommand())
-    ..addCommand(new UpdatePackagesCommand(hidden: !verboseHelp))
-    ..addCommand(new UpgradeCommand());
-
-  return Chain.capture(() async {
-    // Initialize globals.
-    context[Logger] = new StdoutLogger();
-    context[DeviceManager] = new DeviceManager();
-    Doctor.initGlobal();
-
-    if (flutterUsage.isFirstRun) {
-      printStatus(
-        'The Flutter tool anonymously reports feature usage statistics and basic crash reports to Google to\n'
-        'help Google contribute improvements to Flutter over time. Use "flutter config" to control this\n'
-        'behavior. See Google\'s privacy policy: https://www.google.com/intl/en/policies/privacy/\n'
-      );
-    }
-
-    dynamic result = await runner.run(args);
-
-    if (result is int)
-      _exit(result);
-  }, onError: (dynamic error, Chain chain) {
-    if (error is UsageException) {
-      stderr.writeln(error.message);
-      stderr.writeln();
-      stderr.writeln("Run 'flutter -h' (or 'flutter <command> -h') for available "
-        "flutter commands and options.");
-      // Argument error exit code.
-      _exit(64);
-    } else if (error is ProcessExit) {
-      // We've caught an exit code.
-      _exit(error.exitCode);
-    } else {
-      // We've crashed; emit a log report.
-      stderr.writeln();
-
-      flutterUsage.sendException(error, chain);
-
-      if (Platform.environment.containsKey('FLUTTER_DEV')) {
-        // If we're working on the tools themselves, just print the stack trace.
-        stderr.writeln('$error');
-        stderr.writeln(chain.terse.toString());
-      } else {
-        if (error is String)
-          stderr.writeln('Oops; flutter has exited unexpectedly: "$error".');
-        else
-          stderr.writeln('Oops; flutter has exited unexpectedly.');
-
-        File file = _createCrashReport(args, error, chain);
-
-        stderr.writeln(
-          'Crash report written to ${path.relative(file.path)}; '
-          'please let us know at https://github.com/flutter/flutter/issues.');
-      }
-
-      _exit(1);
-    }
-  });
-}
-
-File _createCrashReport(List<String> args, dynamic error, Chain chain) {
-  File crashFile = getUniqueFile(Directory.current, 'flutter', 'log');
-
-  StringBuffer buf = new StringBuffer();
-
-  buf.writeln('Flutter crash report; please file at https://github.com/flutter/flutter/issues.\n');
-
-  buf.writeln('## command\n');
-  buf.writeln('flutter ${args.join(' ')}\n');
-
-  buf.writeln('## exception\n');
-  buf.writeln('$error\n');
-  buf.writeln('```\n${chain.terse}```\n');
-
-  buf.writeln('## flutter doctor\n');
-  buf.writeln('```\n${_doctorText()}```');
-
-  crashFile.writeAsStringSync(buf.toString());
-
-  return crashFile;
-}
-
-String _doctorText() {
-  try {
-    BufferLogger logger = new BufferLogger();
-    AppContext appContext = new AppContext();
-
-    appContext[Logger] = logger;
-
-    appContext.runInZone(() => doctor.diagnose());
-
-    return logger.statusText;
-  } catch (error, trace) {
-    return 'encountered exception: $error\n\n${trace.toString().trim()}\n';
-  }
-}
-
-Future<Null> _exit(int code) async {
-  // Send any last analytics calls that are in progress without overly delaying
-  // the tool's exit (we wait a maximum of 250ms).
-  if (flutterUsage.enabled) {
-    Stopwatch stopwatch = new Stopwatch()..start();
-    await flutterUsage.ensureAnalyticsSent();
-    printTrace('ensureAnalyticsSent: ${stopwatch.elapsedMilliseconds}ms');
-  }
-
-  // Write any buffered output.
-  logger.flush();
-
-  // Give the task / timer queue one cycle through before we hard exit.
-  await Timer.run(() {
-    exit(code);
-  });
+  await runner.run(args, <FlutterCommand>[
+    new AnalyzeCommand(verboseHelp: verboseHelp),
+    new BuildCommand(verboseHelp: verboseHelp),
+    new ChannelCommand(verboseHelp: verboseHelp),
+    new CleanCommand(),
+    new InjectPluginsCommand(hidden: !verboseHelp),
+    new ConfigCommand(verboseHelp: verboseHelp),
+    new CreateCommand(),
+    new DaemonCommand(hidden: !verboseHelp),
+    new DevicesCommand(),
+    new DoctorCommand(verbose: verbose),
+    new DriveCommand(),
+    new FormatCommand(),
+    new FuchsiaReloadCommand(),
+    new IdeConfigCommand(hidden: !verboseHelp),
+    new InstallCommand(),
+    new LogsCommand(),
+    new PackagesCommand(),
+    new PrecacheCommand(),
+    new RunCommand(verboseHelp: verboseHelp),
+    new ScreenshotCommand(),
+    new StopCommand(),
+    new TestCommand(verboseHelp: verboseHelp),
+    new TraceCommand(),
+    new UpdatePackagesCommand(hidden: !verboseHelp),
+    new UpgradeCommand(),
+  ], verbose: verbose,
+     muteCommandLogging: muteCommandLogging,
+     verboseHelp: verboseHelp);
 }

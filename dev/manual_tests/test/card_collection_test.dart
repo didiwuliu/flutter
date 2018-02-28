@@ -3,39 +3,39 @@
 // found in the LICENSE file.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show createHttpClient;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:test/test.dart';
 
-import '../card_collection.dart' as card_collection;
+import '../lib/card_collection.dart' as card_collection;
+import 'mock_image_http.dart';
 
 void main() {
-  test("Card Collection smoke test", () {
-    testWidgets((WidgetTester tester) {
-      card_collection.main(); // builds the app and schedules a frame but doesn't trigger one
-      tester.pump(); // see https://github.com/flutter/flutter/issues/1865
-      tester.pump(); // triggers a frame
+  testWidgets('Card Collection smoke test', (WidgetTester tester) async {
+    createHttpClient = createMockImageHttpClient;
+    card_collection.main(); // builds the app and schedules a frame but doesn't trigger one
+    await tester.pump(); // see https://github.com/flutter/flutter/issues/1865
+    await tester.pump(); // triggers a frame
 
-      Finder navigationMenu = find.byWidgetPredicate((Widget widget) {
-        if (widget is Tooltip)
-          return widget.message == 'Open navigation menu';
-        return false;
-      });
-
-      expect(tester, hasWidget(navigationMenu));
-
-      tester.tap(navigationMenu);
-      tester.pump(); // start opening menu
-      tester.pump(const Duration(seconds: 1)); // wait til it's really opened
-
-      // smoke test for various checkboxes
-      tester.tap(find.text('Make card labels editable'));
-      tester.pump();
-      tester.tap(find.text('Let the sun shine'));
-      tester.pump();
-      tester.tap(find.text('Make card labels editable'));
-      tester.pump();
-      tester.tap(find.text('Vary font sizes'));
-      tester.pump();
+    final Finder navigationMenu = find.byWidgetPredicate((Widget widget) {
+      if (widget is Tooltip)
+        return widget.message == 'Open navigation menu';
+      return false;
     });
+
+    expect(navigationMenu, findsOneWidget);
+
+    await tester.tap(navigationMenu);
+    await tester.pump(); // start opening menu
+    await tester.pump(const Duration(seconds: 1)); // wait til it's really opened
+
+    // smoke test for various checkboxes
+    await tester.tap(find.text('Make card labels editable'));
+    await tester.pump();
+    await tester.tap(find.text('Let the sun shine'));
+    await tester.pump();
+    await tester.tap(find.text('Make card labels editable'));
+    await tester.pump();
+    await tester.tap(find.text('Vary font sizes'));
+    await tester.pump();
   });
 }

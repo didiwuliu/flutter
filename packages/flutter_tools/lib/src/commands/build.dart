@@ -3,20 +3,24 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
 
+import 'package:meta/meta.dart';
+
+import '../base/file_system.dart';
+import '../base/utils.dart';
 import '../globals.dart';
 import '../runner/flutter_command.dart';
+import 'build_aot.dart';
 import 'build_apk.dart';
 import 'build_flx.dart';
 import 'build_ios.dart';
 
 class BuildCommand extends FlutterCommand {
-  BuildCommand() {
-    addSubcommand(new BuildApkCommand());
-    addSubcommand(new BuildCleanCommand());
-    addSubcommand(new BuildIOSCommand());
-    addSubcommand(new BuildFlxCommand());
+  BuildCommand({bool verboseHelp: false}) {
+    addSubcommand(new BuildApkCommand(verboseHelp: verboseHelp));
+    addSubcommand(new BuildAotCommand(verboseHelp: verboseHelp));
+    addSubcommand(new BuildIOSCommand(verboseHelp: verboseHelp));
+    addSubcommand(new BuildFlxCommand(verboseHelp: verboseHelp));
   }
 
   @override
@@ -26,30 +30,31 @@ class BuildCommand extends FlutterCommand {
   final String description = 'Flutter build commands.';
 
   @override
-  Future<int> runInProject() => new Future<int>.value(0);
+  Future<Null> runCommand() async { }
 }
 
-class BuildCleanCommand extends FlutterCommand {
-  @override
-  final String name = 'clean';
+abstract class BuildSubCommand extends FlutterCommand {
+  BuildSubCommand() {
+    requiresPubspecYaml();
+  }
 
   @override
-  final String description = 'Delete the build/ directory.';
+  @mustCallSuper
+  Future<Null> runCommand() async {
+    if (isRunningOnBot) {
+      final File dotPackages = fs.file('.packages');
+      printStatus('Contents of .packages:');
+      if (dotPackages.existsSync())
+        printStatus(dotPackages.readAsStringSync());
+      else
+        printError('File not found: ${dotPackages.absolute.path}');
 
-  @override
-  Future<int> runInProject() async {
-    Directory buildDir = new Directory('build');
-    printStatus("Deleting '${buildDir.path}${Platform.pathSeparator}'.");
-
-    if (!buildDir.existsSync())
-      return 0;
-
-    try {
-      buildDir.deleteSync(recursive: true);
-      return 0;
-    } catch (error) {
-      printError(error.toString());
-      return 1;
+      final File pubspecLock = fs.file('pubspec.lock');
+      printStatus('Contents of pubspec.lock:');
+      if (pubspecLock.existsSync())
+        printStatus(pubspecLock.readAsStringSync());
+      else
+        printError('File not found: ${pubspecLock.absolute.path}');
     }
   }
 }

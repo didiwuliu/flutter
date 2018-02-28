@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:convert' show UTF8;
-import 'dart:io';
+import 'dart:async';
 
 import 'package:archive/archive.dart';
-import 'package:path/path.dart' as path;
 
+import 'base/file_system.dart';
 import 'base/process.dart';
+import 'devfs.dart';
 
 abstract class ZipBuilder {
   factory ZipBuilder() {
@@ -21,49 +21,42 @@ abstract class ZipBuilder {
 
   ZipBuilder._();
 
-  List<ZipEntry> entries = <ZipEntry>[];
+  Map<String, DevFSContent> entries = <String, DevFSContent>{};
 
-  void addEntry(ZipEntry entry) => entries.add(entry);
-
-  void createZip(File outFile, Directory zipBuildDir);
-}
-
-class ZipEntry {
-  ZipEntry.fromFile(this.archivePath, File file) {
-    this._file = file;
-  }
-
-  ZipEntry.fromString(this.archivePath, String contents) {
-    this._contents = contents;
-  }
-
-  final String archivePath;
-
-  File _file;
-  String _contents;
-
-  bool get isStringEntry => _contents != null;
+  Future<Null> createZip(File outFile, Directory zipBuildDir);
 }
 
 class _ArchiveZipBuilder extends ZipBuilder {
   _ArchiveZipBuilder() : super._();
 
   @override
-  void createZip(File outFile, Directory zipBuildDir) {
-    Archive archive = new Archive();
+  Future<Null> createZip(File outFile, Directory zipBuildDir) async {
+    final Archive archive = new Archive();
 
-    for (ZipEntry entry in entries) {
-      if (entry.isStringEntry) {
-        List<int> data = UTF8.encode(entry._contents);
-        archive.addFile(new ArchiveFile.noCompress(entry.archivePath, data.length, data));
-      } else {
-        List<int> data = entry._file.readAsBytesSync();
-        archive.addFile(new ArchiveFile(entry.archivePath, data.length, data));
-      }
-    }
+    if (zipBuildDir.existsSync())
+      zipBuildDir.deleteSync(recursive: true);
+    zipBuildDir.createSync(recursive: true);
 
-    List<int> zipData = new ZipEncoder().encode(archive);
-    outFile.writeAsBytesSync(zipData);
+    final Completer<Null> finished = new Completer<Null>();
+    int count = entries.length;
+    entries.forEach((String archivePath, DevFSContent content) {
+      content.contentsAsBytes().then<Null>((List<int> data) {
+        archive.addFile(new ArchiveFile.noCompress(archivePath, data.length, data));
+
+        final File file = fs.file(fs.path.join(zipBuildDir.path, archivePath));
+        file.parent.createSync(recursive: true);
+
+        file.writeAsBytes(data).then<Null>((File value) {
+          count -= 1;
+          if (count == 0)
+            finished.complete();
+        });
+      });
+    });
+    await finished.future;
+
+    final List<int> zipData = new ZipEncoder().encode(archive);
+    await outFile.writeAsBytes(zipData);
   }
 }
 
@@ -71,54 +64,66 @@ class _ZipToolBuilder extends ZipBuilder {
   _ZipToolBuilder() : super._();
 
   @override
-  void createZip(File outFile, Directory zipBuildDir) {
-    if (outFile.existsSync())
-      outFile.deleteSync();
+  Future<Null> createZip(File outFile, Directory zipBuildDir) async {
+    // If there are no assets, then create an empty zip file.
+    if (entries.isEmpty) {
+      final List<int> zipData = new ZipEncoder().encode(new Archive());
+      await outFile.writeAsBytes(zipData);
+      return;
+    }
+
+    final File tmpFile = fs.file('${outFile.path}.tmp');
+    if (tmpFile.existsSync())
+      tmpFile.deleteSync();
 
     if (zipBuildDir.existsSync())
       zipBuildDir.deleteSync(recursive: true);
     zipBuildDir.createSync(recursive: true);
 
-    for (ZipEntry entry in entries) {
-      if (entry.isStringEntry) {
-        List<int> data = UTF8.encode(entry._contents);
-        File file = new File(path.join(zipBuildDir.path, entry.archivePath));
+    final Completer<Null> finished = new Completer<Null>();
+    int count = entries.length;
+    entries.forEach((String archivePath, DevFSContent content) {
+      content.contentsAsBytes().then<Null>((List<int> data) {
+        final File file = fs.file(fs.path.join(zipBuildDir.path, archivePath));
         file.parent.createSync(recursive: true);
-        file.writeAsBytesSync(data);
-      } else {
-        List<int> data = entry._file.readAsBytesSync();
-        File file = new File(path.join(zipBuildDir.path, entry.archivePath));
-        file.parent.createSync(recursive: true);
-        file.writeAsBytesSync(data);
-      }
-    }
+        file.writeAsBytes(data).then<Null>((File value) {
+          count -= 1;
+          if (count == 0)
+            finished.complete();
+        });
+      });
+    });
+    await finished.future;
 
-    if (_getCompressedNames().isNotEmpty) {
-      runCheckedSync(
-        <String>['zip', '-q', outFile.absolute.path]..addAll(_getCompressedNames()),
-        workingDirectory: zipBuildDir.path,
-        truncateCommand: true
+    final Iterable<String> compressedNames = _getCompressedNames();
+    if (compressedNames.isNotEmpty) {
+      await runCheckedAsync(
+        <String>['zip', '-q', tmpFile.absolute.path]..addAll(compressedNames),
+        workingDirectory: zipBuildDir.path
       );
     }
 
-    if (_getStoredNames().isNotEmpty) {
-      runCheckedSync(
-        <String>['zip', '-q', '-0', outFile.absolute.path]..addAll(_getStoredNames()),
-        workingDirectory: zipBuildDir.path,
-        truncateCommand: true
+    final Iterable<String> storedNames = _getStoredNames();
+    if (storedNames.isNotEmpty) {
+      await runCheckedAsync(
+        <String>['zip', '-q', '-0', tmpFile.absolute.path]..addAll(storedNames),
+        workingDirectory: zipBuildDir.path
       );
     }
+
+    tmpFile.renameSync(outFile.absolute.path);
   }
 
-  Iterable<String> _getCompressedNames() {
-    return entries
-      .where((ZipEntry entry) => !entry.isStringEntry)
-      .map((ZipEntry entry) => entry.archivePath);
+  static const List<String> _kNoCompressFileExtensions = const <String>['.png', '.jpg'];
+
+  bool isAssetCompressed(String archivePath) {
+    return !_kNoCompressFileExtensions.any(
+        (String extension) => archivePath.endsWith(extension)
+    );
   }
 
-  Iterable<String> _getStoredNames() {
-    return entries
-      .where((ZipEntry entry) => entry.isStringEntry)
-      .map((ZipEntry entry) => entry.archivePath);
-  }
+  Iterable<String> _getCompressedNames() => entries.keys.where(isAssetCompressed);
+
+  Iterable<String> _getStoredNames() => entries.keys
+      .where((String archivePath) => !isAssetCompressed(archivePath));
 }

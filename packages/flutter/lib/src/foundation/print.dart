@@ -14,18 +14,33 @@ typedef void DebugPrintCallback(String message, { int wrapWidth });
 /// If a wrapWidth is provided, each line of the message is word-wrapped to that
 /// width. (Lines may be separated by newline characters, as in '\n'.)
 ///
-/// This function very crudely attempts to throttle the rate at which messages
-/// are sent to avoid data loss on Android. This means that interleaving calls
-/// to this function (directly or indirectly via [debugDumpRenderTree] or
-/// [debugDumpApp]) and to the Dart [print] method can result in out-of-order
-/// messages in the logs.
+/// By default, this function very crudely attempts to throttle the rate at
+/// which messages are sent to avoid data loss on Android. This means that
+/// interleaving calls to this function (directly or indirectly via, e.g.,
+/// [debugDumpRenderTree] or [debugDumpApp]) and to the Dart [print] method can
+/// result in out-of-order messages in the logs.
 ///
 /// The implementation of this function can be replaced by setting the
-/// variable to a new implementation that matches the
+/// [debugPrint] variable to a new implementation that matches the
 /// [DebugPrintCallback] signature. For example, flutter_test does this.
-DebugPrintCallback debugPrint = _defaultDebugPrint;
+///
+/// The default value is [debugPrintThrottled]. For a version that acts
+/// identically but does not throttle, use [debugPrintSynchronously].
+DebugPrintCallback debugPrint = debugPrintThrottled;
 
-void _defaultDebugPrint(String message, { int wrapWidth }) {
+/// Alternative implementation of [debugPrint] that does not throttle.
+/// Used by tests.
+void debugPrintSynchronously(String message, { int wrapWidth }) {
+  if (wrapWidth != null) {
+    print(message.split('\n').expand((String line) => debugWordWrap(line, wrapWidth)).join('\n'));
+  } else {
+    print(message);
+  }
+}
+
+/// Implementation of [debugPrint] that throttles messages. This avoids dropping
+/// messages on platforms that rate-limit their logging (for example, Android).
+void debugPrintThrottled(String message, { int wrapWidth }) {
   if (wrapWidth != null) {
     _debugPrintBuffer.addAll(message.split('\n').expand((String line) => debugWordWrap(line, wrapWidth)));
   } else {
@@ -35,10 +50,11 @@ void _defaultDebugPrint(String message, { int wrapWidth }) {
     _debugPrintTask();
 }
 int _debugPrintedCharacters = 0;
-const int _kDebugPrintCapacity = 16 * 1024;
-Duration _kDebugPrintPauseTime = const Duration(seconds: 1);
-Queue<String> _debugPrintBuffer = new Queue<String>();
-Stopwatch _debugPrintStopwatch = new Stopwatch();
+const int _kDebugPrintCapacity = 12 * 1024;
+const Duration _kDebugPrintPauseTime = const Duration(seconds: 1);
+final Queue<String> _debugPrintBuffer = new Queue<String>();
+final Stopwatch _debugPrintStopwatch = new Stopwatch();
+Completer<Null> _debugPrintCompleter;
 bool _debugPrintScheduled = false;
 void _debugPrintTask() {
   _debugPrintScheduled = false;
@@ -47,42 +63,53 @@ void _debugPrintTask() {
     _debugPrintStopwatch.reset();
     _debugPrintedCharacters = 0;
   }
-  while (_debugPrintedCharacters < _kDebugPrintCapacity && _debugPrintBuffer.length > 0) {
-    String line = _debugPrintBuffer.removeFirst();
+  while (_debugPrintedCharacters < _kDebugPrintCapacity && _debugPrintBuffer.isNotEmpty) {
+    final String line = _debugPrintBuffer.removeFirst();
     _debugPrintedCharacters += line.length; // TODO(ianh): Use the UTF-8 byte length instead
     print(line);
   }
-  if (_debugPrintBuffer.length > 0) {
+  if (_debugPrintBuffer.isNotEmpty) {
     _debugPrintScheduled = true;
     _debugPrintedCharacters = 0;
     new Timer(_kDebugPrintPauseTime, _debugPrintTask);
+    _debugPrintCompleter ??= new Completer<Null>();
   } else {
     _debugPrintStopwatch.start();
+    _debugPrintCompleter?.complete();
+    _debugPrintCompleter = null;
   }
 }
+
+/// A Future that resolves when there is no longer any buffered content being
+/// printed by [debugPrintThrottled] (which is the default implementation for
+/// [debugPrint], which is used to report errors to the console).
+Future<Null> get debugPrintDone => _debugPrintCompleter?.future ?? new Future<Null>.value();
 
 final RegExp _indentPattern = new RegExp('^ *(?:[-+*] |[0-9]+[.):] )?');
 enum _WordWrapParseMode { inSpace, inWord, atBreak }
 /// Wraps the given string at the given width.
 ///
-/// Wrapping occurs at space characters (U+0020). Lines that start
-/// with an octothorpe ("#", U+0023) are not wrapped (so for example,
-/// Dart stack traces won't be wrapped).
+/// Wrapping occurs at space characters (U+0020). Lines that start with an
+/// octothorpe ("#", U+0023) are not wrapped (so for example, Dart stack traces
+/// won't be wrapped).
 ///
-/// This is not suitable for use with arbitrary Unicode text. For
-/// example, it doesn't implement UAX #14, can't handle ideographic
-/// text, doesn't hyphenate, and so forth. It is only intended for
-/// formatting error messages.
+/// Subsequent lines attempt to duplicate the indentation of the first line, for
+/// example if the first line starts with multiple spaces. In addition, if a
+/// `wrapIndent` argument is provided, each line after the first is prefixed by
+/// that string.
 ///
-/// The default [debugPrint] implementation uses this for its line
-/// wrapping.
-Iterable<String> debugWordWrap(String message, int width) sync* {
-  if (message.length < width || message[0] == '#') {
+/// This is not suitable for use with arbitrary Unicode text. For example, it
+/// doesn't implement UAX #14, can't handle ideographic text, doesn't hyphenate,
+/// and so forth. It is only intended for formatting error messages.
+///
+/// The default [debugPrint] implementation uses this for its line wrapping.
+Iterable<String> debugWordWrap(String message, int width, { String wrapIndent: '' }) sync* {
+  if (message.length < width || message.trimLeft()[0] == '#') {
     yield message;
     return;
   }
-  Match prefixMatch = _indentPattern.matchAsPrefix(message);
-  String prefix = ' ' * prefixMatch.group(0).length;
+  final Match prefixMatch = _indentPattern.matchAsPrefix(message);
+  final String prefix = wrapIndent + ' ' * prefixMatch.group(0).length;
   int start = 0;
   int startForLengthCalculations = 0;
   bool addPrefix = false;
@@ -144,11 +171,4 @@ Iterable<String> debugWordWrap(String message, int width) sync* {
         break;
     }
   }
-}
-
-/// Dump the current stack to the console using [debugPrint].
-///
-/// The current stack is obtained using [StackTrace.current].
-void debugPrintStack() {
-  debugPrint(StackTrace.current.toString());
 }

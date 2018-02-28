@@ -3,23 +3,26 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'android/android_device.dart';
 import 'application_package.dart';
 import 'base/common.dart';
+import 'base/context.dart';
+import 'base/file_system.dart';
+import 'base/port_scanner.dart';
 import 'base/utils.dart';
-import 'build_configuration.dart';
+import 'build_info.dart';
 import 'globals.dart';
 import 'ios/devices.dart';
 import 'ios/simulators.dart';
-import 'toolchain.dart';
+
+DeviceManager get deviceManager => context[DeviceManager];
 
 /// A class to get all available devices.
 class DeviceManager {
   /// Constructing DeviceManagers is cheap; they only do expensive work if some
-  /// of their methods are invoked.
+  /// of their methods are called.
   DeviceManager() {
     // Register the known discoverers.
     _deviceDiscoverers.add(new AndroidDevices());
@@ -27,60 +30,98 @@ class DeviceManager {
     _deviceDiscoverers.add(new IOSSimulators());
   }
 
-  List<DeviceDiscovery> _deviceDiscoverers = <DeviceDiscovery>[];
+  final List<DeviceDiscovery> _deviceDiscoverers = <DeviceDiscovery>[];
+
+  String _specifiedDeviceId;
 
   /// A user-specified device ID.
-  String specifiedDeviceId;
+  String get specifiedDeviceId {
+    if (_specifiedDeviceId == null || _specifiedDeviceId == 'all')
+      return null;
+    return _specifiedDeviceId;
+  }
 
+  set specifiedDeviceId(String id) {
+    _specifiedDeviceId = id;
+  }
+
+  /// True when the user has specified a single specific device.
   bool get hasSpecifiedDeviceId => specifiedDeviceId != null;
 
-  /// Return the device with the matching ID; else, complete the Future with
-  /// `null`.
-  ///
-  /// This does a case insentitive compare with `deviceId`.
-  Future<Device> getDeviceById(String deviceId) async {
+  /// True when the user has specified all devices by setting
+  /// specifiedDeviceId = 'all'.
+  bool get hasSpecifiedAllDevices => _specifiedDeviceId == 'all';
+
+  Stream<Device> getDevicesById(String deviceId) async* {
+    final List<Device> devices = await getAllConnectedDevices().toList();
     deviceId = deviceId.toLowerCase();
-    List<Device> devices = await getAllConnectedDevices();
-    Device device = devices.firstWhere(
-      (Device device) => device.id.toLowerCase() == deviceId,
-      orElse: () => null
-    );
+    bool exactlyMatchesDeviceId(Device device) =>
+        device.id.toLowerCase() == deviceId ||
+        device.name.toLowerCase() == deviceId;
+    bool startsWithDeviceId(Device device) =>
+        device.id.toLowerCase().startsWith(deviceId) ||
+        device.name.toLowerCase().startsWith(deviceId);
 
-    if (device != null)
-      return device;
+    final Device exactMatch = devices.firstWhere(
+        exactlyMatchesDeviceId, orElse: () => null);
+    if (exactMatch != null) {
+      yield exactMatch;
+      return;
+    }
 
-    // Match on a close id / name.
-    devices = devices.where((Device device) {
-      return (device.id.toLowerCase().startsWith(deviceId) ||
-        device.name.toLowerCase().startsWith(deviceId));
-    });
-
-    return devices.length == 1 ? devices.first : null;
+    // Match on a id or name starting with [deviceId].
+    for (Device device in devices.where(startsWithDeviceId))
+      yield device;
   }
 
   /// Return the list of connected devices, filtered by any user-specified device id.
-  Future<List<Device>> getDevices() async {
-    if (specifiedDeviceId == null) {
-      return getAllConnectedDevices();
-    } else {
-      Device device = await getDeviceById(specifiedDeviceId);
-      return device == null ? <Device>[] : <Device>[device];
-    }
+  Stream<Device> getDevices() {
+    return hasSpecifiedDeviceId
+        ? getDevicesById(specifiedDeviceId)
+        : getAllConnectedDevices();
+  }
+
+  Iterable<DeviceDiscovery> get _platformDiscoverers {
+    return _deviceDiscoverers.where((DeviceDiscovery discoverer) => discoverer.supportsPlatform);
   }
 
   /// Return the list of all connected devices.
-  Future<List<Device>> getAllConnectedDevices() async {
-    return _deviceDiscoverers
-      .where((DeviceDiscovery discoverer) => discoverer.supportsPlatform)
-      .expand((DeviceDiscovery discoverer) => discoverer.devices)
-      .toList();
+  Stream<Device> getAllConnectedDevices() async* {
+    for (DeviceDiscovery discoverer in _platformDiscoverers) {
+      for (Device device in await discoverer.devices) {
+        yield device;
+      }
+    }
+  }
+
+  /// Whether we're capable of listing any devices given the current environment configuration.
+  bool get canListAnything {
+    return _platformDiscoverers.any((DeviceDiscovery discoverer) => discoverer.canListAnything);
+  }
+
+  /// Get diagnostics about issues with any connected devices.
+  Future<List<String>> getDeviceDiagnostics() async {
+    final List<String> diagnostics = <String>[];
+    for (DeviceDiscovery discoverer in _platformDiscoverers) {
+      diagnostics.addAll(await discoverer.getDiagnostics());
+    }
+    return diagnostics;
   }
 }
 
 /// An abstract class to discover and enumerate a specific type of devices.
 abstract class DeviceDiscovery {
   bool get supportsPlatform;
-  List<Device> get devices;
+
+  /// Whether this device discovery is capable of listing any devices given the
+  /// current environment configuration.
+  bool get canListAnything;
+
+  Future<List<Device>> get devices;
+
+  /// Gets a list of diagnostic messages pertaining to issues with any connected
+  /// devices (will be an empty list if there are no issues).
+  Future<List<String>> getDiagnostics() => new Future<List<String>>.value(<String>[]);
 }
 
 /// A [DeviceDiscovery] implementation that uses polling to discover device adds
@@ -88,45 +129,48 @@ abstract class DeviceDiscovery {
 abstract class PollingDeviceDiscovery extends DeviceDiscovery {
   PollingDeviceDiscovery(this.name);
 
-  static const Duration _pollingDuration = const Duration(seconds: 4);
+  static const Duration _pollingInterval = const Duration(seconds: 4);
+  static const Duration _pollingTimeout = const Duration(seconds: 30);
 
   final String name;
   ItemListNotifier<Device> _items;
-  Timer _timer;
+  Poller _poller;
 
-  List<Device> pollingGetDevices();
+  Future<List<Device>> pollingGetDevices();
 
   void startPolling() {
-    if (_timer == null) {
-      if (_items == null)
-        _items = new ItemListNotifier<Device>();
-      _timer = new Timer.periodic(_pollingDuration, (Timer timer) {
-        _items.updateWithNewList(pollingGetDevices());
-      });
+    if (_poller == null) {
+      _items ??= new ItemListNotifier<Device>();
+
+      _poller = new Poller(() async {
+        try {
+          final List<Device> devices = await pollingGetDevices().timeout(_pollingTimeout);
+          _items.updateWithNewList(devices);
+        } on TimeoutException {
+          printTrace('Device poll timed out.');
+        }
+      }, _pollingInterval);
     }
   }
 
   void stopPolling() {
-    _timer?.cancel();
-    _timer = null;
+    _poller?.cancel();
+    _poller = null;
   }
 
   @override
-  List<Device> get devices {
-    if (_items == null)
-      _items = new ItemListNotifier<Device>.from(pollingGetDevices());
+  Future<List<Device>> get devices async {
+    _items ??= new ItemListNotifier<Device>.from(await pollingGetDevices());
     return _items.items;
   }
 
   Stream<Device> get onAdded {
-    if (_items == null)
-      _items = new ItemListNotifier<Device>();
+    _items ??= new ItemListNotifier<Device>();
     return _items.onAdded;
   }
 
   Stream<Device> get onRemoved {
-    if (_items == null)
-      _items = new ItemListNotifier<Device>();
+    _items ??= new ItemListNotifier<Device>();
     return _items.onRemoved;
   }
 
@@ -146,25 +190,36 @@ abstract class Device {
   bool get supportsStartPaused => true;
 
   /// Whether it is an emulated device running on localhost.
-  bool get isLocalEmulator;
+  Future<bool> get isLocalEmulator;
+
+  /// Check if a version of the given app is already installed
+  Future<bool> isAppInstalled(ApplicationPackage app);
+
+  /// Check if the latest build of the [app] is already installed.
+  Future<bool> isLatestBuildInstalled(ApplicationPackage app);
 
   /// Install an app package on the current device
-  bool installApp(ApplicationPackage app);
+  Future<bool> installApp(ApplicationPackage app);
+
+  /// Uninstall an app package from the current device
+  Future<bool> uninstallApp(ApplicationPackage app);
 
   /// Check if the device is supported by Flutter
   bool isSupported();
 
   // String meant to be displayed to the user indicating if the device is
   // supported by Flutter, and, if not, why.
-  String supportMessage() => isSupported() ? "Supported" : "Unsupported";
+  String supportMessage() => isSupported() ? 'Supported' : 'Unsupported';
 
-  /// Check if the current version of the given app is already installed
-  bool isAppInstalled(ApplicationPackage app);
+  /// The device's platform.
+  Future<TargetPlatform> get targetPlatform;
 
-  TargetPlatform get platform;
+  Future<String> get sdkNameAndVersion;
 
-  /// Get the log reader for this device.
-  DeviceLogReader get logReader;
+  /// Get a log reader for this device.
+  /// If [app] is specified, this will return a log reader specific to that
+  /// application. Otherwise, a global log reader will be returned.
+  DeviceLogReader getLogReader({ApplicationPackage app});
 
   /// Get the port forwarder for this device.
   DevicePortForwarder get portForwarder;
@@ -175,26 +230,37 @@ abstract class Device {
   /// Start an app package on the current device.
   ///
   /// [platformArgs] allows callers to pass platform-specific arguments to the
-  /// start call.
-  Future<bool> startApp(
-    ApplicationPackage package,
-    Toolchain toolchain, {
+  /// start call. The build mode is not used by all platforms.
+  ///
+  /// If [usesTerminalUi] is true, Flutter Tools may attempt to prompt the
+  /// user to resolve fixable issues such as selecting a signing certificate
+  /// for iOS device deployment. Set to false if stdin cannot be read from while
+  /// attempting to start the app.
+  Future<LaunchResult> startApp(
+    ApplicationPackage package, {
     String mainPath,
     String route,
-    bool checked: true,
-    bool clearLogs: false,
-    bool startPaused: false,
-    int observatoryPort: observatoryDefaultPort,
-    int diagnosticPort: diagnosticDefaultPort,
-    Map<String, dynamic> platformArgs
+    DebuggingOptions debuggingOptions,
+    Map<String, dynamic> platformArgs,
+    bool prebuiltApplication: false,
+    bool applicationNeedsRebuild: false,
+    bool usesTerminalUi: true,
+    bool ipv6: false,
   });
+
+  /// Does this device implement support for hot reloading / restarting?
+  bool get supportsHotMode => true;
 
   /// Stop an app package on the current device.
   Future<bool> stopApp(ApplicationPackage app);
 
   bool get supportsScreenshot => false;
 
-  Future<bool> takeScreenshot(File outputFile) => new Future<bool>.error('unimplemented');
+  Future<Null> takeScreenshot(File outputFile) => new Future<Null>.error('unimplemented');
+
+  /// Find the apps that are currently running on this device.
+  Future<List<DiscoveredApp>> discoverApps() =>
+      new Future<List<DiscoveredApp>>.value(<DiscoveredApp>[]);
 
   @override
   int get hashCode => id.hashCode;
@@ -211,29 +277,110 @@ abstract class Device {
   @override
   String toString() => name;
 
-  static void printDevices(List<Device> devices) {
-    int nameWidth = 0;
-    int idWidth = 0;
+  static Stream<String> descriptions(List<Device> devices) async* {
+    if (devices.isEmpty)
+      return;
 
-    for (Device device in devices) {
-      nameWidth = math.max(nameWidth, device.name.length);
-      idWidth = math.max(idWidth, device.id.length);
-    }
-
+    // Extract device information
+    final List<List<String>> table = <List<String>>[];
     for (Device device in devices) {
       String supportIndicator = device.isSupported() ? '' : ' (unsupported)';
-      printStatus('${device.name.padRight(nameWidth)} • '
-        '${device.id.padRight(idWidth)} • '
-        '${getNameForTargetPlatform(device.platform)}$supportIndicator');
+      final TargetPlatform targetPlatform = await device.targetPlatform;
+      if (await device.isLocalEmulator) {
+        final String type = targetPlatform == TargetPlatform.ios ? 'simulator' : 'emulator';
+        supportIndicator += ' ($type)';
+      }
+      table.add(<String>[
+        device.name,
+        device.id,
+        '${getNameForTargetPlatform(targetPlatform)}',
+        '${await device.sdkNameAndVersion}$supportIndicator',
+      ]);
     }
+
+    // Calculate column widths
+    final List<int> indices = new List<int>.generate(table[0].length - 1, (int i) => i);
+    List<int> widths = indices.map((int i) => 0).toList();
+    for (List<String> row in table) {
+      widths = indices.map((int i) => math.max(widths[i], row[i].length)).toList();
+    }
+
+    // Join columns into lines of text
+    for (List<String> row in table) {
+      yield indices.map((int i) => row[i].padRight(widths[i])).join(' • ') + ' • ${row.last}';
+    }
+  }
+
+  static Future<Null> printDevices(List<Device> devices) async {
+    await descriptions(devices).forEach(printStatus);
+  }
+}
+
+class DebuggingOptions {
+  DebuggingOptions.enabled(this.buildInfo, {
+    this.startPaused: false,
+    this.enableSoftwareRendering: false,
+    this.skiaDeterministicRendering: false,
+    this.traceSkia: false,
+    this.useTestFonts: false,
+    this.observatoryPort,
+   }) : debuggingEnabled = true;
+
+  DebuggingOptions.disabled(this.buildInfo) :
+    debuggingEnabled = false,
+    useTestFonts = false,
+    startPaused = false,
+    enableSoftwareRendering = false,
+    skiaDeterministicRendering = false,
+    traceSkia = false,
+    observatoryPort = null;
+
+  final bool debuggingEnabled;
+
+  final BuildInfo buildInfo;
+  final bool startPaused;
+  final bool enableSoftwareRendering;
+  final bool skiaDeterministicRendering;
+  final bool traceSkia;
+  final bool useTestFonts;
+  final int observatoryPort;
+
+  bool get hasObservatoryPort => observatoryPort != null;
+
+  /// Return the user specified observatory port. If that isn't available,
+  /// return [kDefaultObservatoryPort], or a port close to that one.
+  Future<int> findBestObservatoryPort() {
+    if (hasObservatoryPort)
+      return new Future<int>.value(observatoryPort);
+    return portScanner.findPreferredPort(observatoryPort ?? kDefaultObservatoryPort);
+  }
+}
+
+class LaunchResult {
+  LaunchResult.succeeded({ this.observatoryUri }) : started = true;
+  LaunchResult.failed() : started = false, observatoryUri = null;
+
+  bool get hasObservatory => observatoryUri != null;
+
+  final bool started;
+  final Uri observatoryUri;
+
+  @override
+  String toString() {
+    final StringBuffer buf = new StringBuffer('started=$started');
+    if (observatoryUri != null)
+      buf.write(', observatory=$observatoryUri');
+    return buf.toString();
   }
 }
 
 class ForwardedPort {
-  ForwardedPort(this.hostPort, this.devicePort);
+  ForwardedPort(this.hostPort, this.devicePort) : context = null;
+  ForwardedPort.withContext(this.hostPort, this.devicePort, this.context);
 
   final int hostPort;
   final int devicePort;
+  final dynamic context;
 
   @override
   String toString() => 'ForwardedPort HOST:$hostPort to DEVICE:$devicePort';
@@ -248,41 +395,29 @@ abstract class DevicePortForwarder {
   /// Forward [hostPort] on the host to [devicePort] on the device.
   /// If [hostPort] is null, will auto select a host port.
   /// Returns a Future that completes with the host port.
-  Future<int> forward(int devicePort, {int hostPort: null});
+  Future<int> forward(int devicePort, { int hostPort });
 
   /// Stops forwarding [forwardedPort].
   Future<Null> unforward(ForwardedPort forwardedPort);
 }
 
-/// Read the log for a particular device. Subclasses must implement `hashCode`
-/// and `operator ==` so that log readers that read from the same location can be
-/// de-duped. For example, two Android devices will both try and log using
-/// `adb logcat`; we don't want to display two identical log streams.
+/// Read the log for a particular device.
 abstract class DeviceLogReader {
   String get name;
 
-  /// A broadcast stream where each element in the string is a line of log
-  /// output.
-  Stream<String> get lines;
-
-  /// Start reading logs from the device.
-  Future<Null> start();
-
-  /// Actively reading lines from the log?
-  bool get isReading;
-
-  /// Actively stop reading logs from the device.
-  Future<Null> stop();
-
-  /// Completes when the log is finished.
-  Future<int> get finished;
-
-  @override
-  int get hashCode;
-
-  @override
-  bool operator ==(dynamic other);
+  /// A broadcast stream where each element in the string is a line of log output.
+  Stream<String> get logLines;
 
   @override
   String toString() => name;
+
+  /// Process ID of the app on the device.
+  int appPid;
+}
+
+/// Describes an app running on the device.
+class DiscoveredApp {
+  DiscoveredApp(this.id, this.observatoryPort);
+  final String id;
+  final int observatoryPort;
 }

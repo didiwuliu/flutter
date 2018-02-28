@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import 'box.dart';
+import 'layer.dart';
 import 'object.dart';
 
 /// The options that control whether the performance overlay displays certain
@@ -36,33 +37,88 @@ enum PerformanceOverlayOption {
 
   /// Display the engine frame times as they change over a set period of time
   /// in the form of a graph. The y axis of the graph denotes the total time
-  /// spent by the eninge as a fraction of the total frame slice. When the bar
+  /// spent by the engine as a fraction of the total frame slice. When the bar
   /// turns red, a frame is lost.
   visualizeEngineStatistics,
 }
 
+/// Displays performance statistics.
+///
+/// The overlay show two time series. The first shows how much time was required
+/// on this thread to produce each frame. The second shows how much time was
+/// required on the GPU thread to produce each frame. Ideally, both these values
+/// would be less than the total frame budget for the hardware on which the app
+/// is running. For example, if the hardware has a screen that updates at 60 Hz,
+/// each thread should ideally spend less than 16ms producing each frame. This
+/// ideal condition is indicated by a green vertical line for each thread.
+/// Otherwise, the performance overlay shows a red vertical line.
+///
+/// The simplest way to show the performance overlay is to set
+/// [MaterialApp.showPerformanceOverlay] or [WidgetsApp.showPerformanceOverlay]
+/// to true.
 class RenderPerformanceOverlay extends RenderBox {
-  RenderPerformanceOverlay({ int optionsMask: 0, int rasterizerThreshold: 0 })
-    : _optionsMask = optionsMask,
-      _rasterizerThreshold = rasterizerThreshold;
+  /// Creates a performance overlay render object.
+  ///
+  /// The [optionsMask], [rasterizerThreshold], [checkerboardRasterCacheImages],
+  /// and [checkerboardOffscreenLayers] arguments must not be null.
+  RenderPerformanceOverlay({
+    int optionsMask: 0,
+    int rasterizerThreshold: 0,
+    bool checkerboardRasterCacheImages: false,
+    bool checkerboardOffscreenLayers: false,
+  }) : assert(optionsMask != null),
+       assert(rasterizerThreshold != null),
+       assert(checkerboardRasterCacheImages != null),
+       assert(checkerboardOffscreenLayers != null),
+       _optionsMask = optionsMask,
+       _rasterizerThreshold = rasterizerThreshold,
+       _checkerboardRasterCacheImages = checkerboardRasterCacheImages,
+       _checkerboardOffscreenLayers = checkerboardOffscreenLayers;
 
   /// The mask is created by shifting 1 by the index of the specific
-  /// PerformanceOverlayOption to enable.
+  /// [PerformanceOverlayOption] to enable.
   int get optionsMask => _optionsMask;
   int _optionsMask;
-  void set optionsMask(int mask) {
-    if (mask == _optionsMask)
+  set optionsMask(int value) {
+    assert(value != null);
+    if (value == _optionsMask)
       return;
-    _optionsMask = mask;
+    _optionsMask = value;
     markNeedsPaint();
   }
 
+  /// The rasterizer threshold is an integer specifying the number of frame
+  /// intervals that the rasterizer must miss before it decides that the frame
+  /// is suitable for capturing an SkPicture trace for further analysis.
   int get rasterizerThreshold => _rasterizerThreshold;
   int _rasterizerThreshold;
-  void set rasterizerThreshold (int threshold) {
-    if (threshold == _rasterizerThreshold)
+  set rasterizerThreshold(int value) {
+    assert(value != null);
+    if (value == _rasterizerThreshold)
       return;
-    _rasterizerThreshold = threshold;
+    _rasterizerThreshold = value;
+    markNeedsPaint();
+  }
+
+  /// Whether the raster cache should checkerboard cached entries.
+  bool get checkerboardRasterCacheImages => _checkerboardRasterCacheImages;
+  bool _checkerboardRasterCacheImages;
+  set checkerboardRasterCacheImages(bool value) {
+    assert(value != null);
+    if (value == _checkerboardRasterCacheImages)
+      return;
+    _checkerboardRasterCacheImages = value;
+    markNeedsPaint();
+  }
+
+  /// Whether the compositor should checkerboard layers rendered to offscreen bitmaps.
+  bool get checkerboardOffscreenLayers => _checkerboardOffscreenLayers;
+  bool _checkerboardOffscreenLayers;
+  set checkerboardOffscreenLayers(bool value) {
+    assert(value != null);
+    if (value == _checkerboardOffscreenLayers)
+      return;
+    _checkerboardOffscreenLayers = value;
     markNeedsPaint();
   }
 
@@ -73,16 +129,16 @@ class RenderPerformanceOverlay extends RenderBox {
   bool get alwaysNeedsCompositing => true;
 
   @override
-  double getMinIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth(0.0);
+  double computeMinIntrinsicWidth(double height) {
+    return 0.0;
   }
 
   @override
-  double getMaxIntrinsicWidth(BoxConstraints constraints) {
-    return constraints.constrainWidth(0.0);
+  double computeMaxIntrinsicWidth(double height) {
+    return 0.0;
   }
 
-  double get intrinsicHeight {
+  double get _intrinsicHeight {
     const double kDefaultGraphHeight = 80.0;
     double result = 0.0;
     if ((optionsMask | (1 << PerformanceOverlayOption.displayRasterizerStatistics.index) > 0) ||
@@ -95,23 +151,29 @@ class RenderPerformanceOverlay extends RenderBox {
   }
 
   @override
-  double getMinIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(intrinsicHeight);
+  double computeMinIntrinsicHeight(double width) {
+    return _intrinsicHeight;
   }
 
   @override
-  double getMaxIntrinsicHeight(BoxConstraints constraints) {
-    return constraints.constrainHeight(intrinsicHeight);
+  double computeMaxIntrinsicHeight(double width) {
+    return _intrinsicHeight;
   }
 
   @override
   void performResize() {
-    size = constraints.constrain(new Size(double.INFINITY, intrinsicHeight));
+    size = constraints.constrain(new Size(double.INFINITY, _intrinsicHeight));
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
     assert(needsCompositing);
-    context.pushPerformanceOverlay(offset, optionsMask, rasterizerThreshold, size);
+    context.addLayer(new PerformanceOverlayLayer(
+      overlayRect: new Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height),
+      optionsMask: optionsMask,
+      rasterizerThreshold: rasterizerThreshold,
+      checkerboardRasterCacheImages: checkerboardRasterCacheImages,
+      checkerboardOffscreenLayers: checkerboardOffscreenLayers,
+    ));
   }
 }
