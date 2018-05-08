@@ -4,7 +4,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
@@ -240,11 +239,11 @@ class ScrollPositionWithSingleContext extends ScrollPosition implements ScrollAc
   ScrollDragController _currentDrag;
 
   @override
-  Drag drag(DragStartDetails details, VoidCallback onDragCanceled) {
+  Drag drag(DragStartDetails details, VoidCallback dragCancelCallback) {
     final ScrollDragController drag = new ScrollDragController(
       delegate: this,
       details: details,
-      onDragCanceled: onDragCanceled,
+      onDragCanceled: dragCancelCallback,
       carriedVelocity: physics.carriedMomentum(_heldPreviousVelocity),
       motionStartDistanceThreshold: physics.dragStartDistanceMotionThreshold,
     );

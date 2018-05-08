@@ -4,7 +4,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
@@ -130,7 +129,7 @@ abstract class TextSelectionControls {
     return true;
   }
 
-  /// Whether the the current selection of the text field managed by the given
+  /// Whether the current selection of the text field managed by the given
   /// `delegate` can be extended to include the entire content of the text
   /// field.
   ///

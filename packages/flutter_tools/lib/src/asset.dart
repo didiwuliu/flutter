@@ -21,9 +21,9 @@ const AssetBundleFactory _kManifestFactory = const _ManifestAssetBundleFactory()
 /// Injected factory class for spawning [AssetBundle] instances.
 abstract class AssetBundleFactory {
   /// The singleton instance, pulled from the [AppContext].
-  static AssetBundleFactory get instance => context == null
-      ? _kManifestFactory
-      : context.putIfAbsent(AssetBundleFactory, () => _kManifestFactory);
+  static AssetBundleFactory get instance => context[AssetBundleFactory];
+
+  static AssetBundleFactory get defaultInstance => _kManifestFactory;
 
   /// Creates a new [AssetBundle].
   AssetBundle createBundle();
@@ -39,7 +39,7 @@ abstract class AssetBundle {
   /// Returns 0 for success; non-zero for failure.
   Future<int> build({
     String manifestPath: _ManifestAssetBundle.defaultManifestPath,
-    String workingDirPath,
+    String assetDirPath,
     String packagesPath,
     bool includeDefaultFonts: true,
     bool reportLicensedPackages: false
@@ -78,7 +78,7 @@ class _ManifestAssetBundle implements AssetBundle {
       return true;
 
     final FileStat stat = fs.file(manifestPath).statSync();
-    if (stat.type == FileSystemEntityType.NOT_FOUND)
+    if (stat.type == FileSystemEntityType.NOT_FOUND) // ignore: deprecated_member_use
       return true;
 
     return stat.modified.isAfter(_lastBuildTimestamp);
@@ -87,12 +87,12 @@ class _ManifestAssetBundle implements AssetBundle {
   @override
   Future<int> build({
     String manifestPath: defaultManifestPath,
-    String workingDirPath,
+    String assetDirPath,
     String packagesPath,
     bool includeDefaultFonts: true,
     bool reportLicensedPackages: false
   }) async {
-    workingDirPath ??= getAssetBuildDirectory();
+    assetDirPath ??= getAssetBuildDirectory();
     packagesPath ??= fs.path.absolute(PackageMap.globalPackagesPath);
     FlutterManifest flutterManifest;
     try {
@@ -124,7 +124,7 @@ class _ManifestAssetBundle implements AssetBundle {
       packageMap,
       flutterManifest,
       assetBasePath,
-      excludeDirs: <String>[workingDirPath, getBuildDirectory()]
+      excludeDirs: <String>[assetDirPath, getBuildDirectory()]
     );
 
     if (assetVariants == null)
@@ -204,9 +204,7 @@ class _ManifestAssetBundle implements AssetBundle {
 
     entries[_kAssetManifestJson] = _createAssetManifest(assetVariants);
 
-
-    if (fonts.isNotEmpty)
-      entries[_kFontManifestJson] = new DevFSStringContent(JSON.encode(fonts));
+    entries[_kFontManifestJson] = new DevFSStringContent(json.encode(fonts));
 
     // TODO(ianh): Only do the following line if we've changed packages or if our LICENSE file changed
     entries[_kLICENSE] = await _obtainLicenses(packageMap, assetBasePath, reportPackages: reportLicensedPackages);
@@ -368,14 +366,14 @@ Future<DevFSContent> _obtainLicenses(
 }
 
 DevFSContent _createAssetManifest(Map<_Asset, List<_Asset>> assetVariants) {
-  final Map<String, List<String>> json = <String, List<String>>{};
+  final Map<String, List<String>> jsonObject = <String, List<String>>{};
   for (_Asset main in assetVariants.keys) {
     final List<String> variants = <String>[];
     for (_Asset variant in assetVariants[main])
       variants.add(variant.entryUri.path);
-    json[main.entryUri.path] = variants;
+    jsonObject[main.entryUri.path] = variants;
   }
-  return new DevFSStringContent(JSON.encode(json));
+  return new DevFSStringContent(json.encode(jsonObject));
 }
 
 List<Map<String, dynamic>> _parseFonts(

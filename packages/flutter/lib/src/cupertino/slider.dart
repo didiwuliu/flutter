@@ -5,7 +5,6 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
@@ -111,11 +110,11 @@ class CupertinoSlider extends StatefulWidget {
   _CupertinoSliderState createState() => new _CupertinoSliderState();
 
   @override
-  void debugFillProperties(DiagnosticPropertiesBuilder description) {
-    super.debugFillProperties(description);
-    description.add(new DoubleProperty('value', value));
-    description.add(new DoubleProperty('min', min));
-    description.add(new DoubleProperty('max', max));
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(new DoubleProperty('value', value));
+    properties.add(new DoubleProperty('min', min));
+    properties.add(new DoubleProperty('max', max));
   }
 }
 

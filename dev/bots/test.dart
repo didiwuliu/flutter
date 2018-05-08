@@ -32,6 +32,9 @@ const Map<String, ShardRunner> _kShards = const <String, ShardRunner>{
   'coverage': _runCoverage,
 };
 
+const Duration _kLongTimeout = const Duration(minutes: 45);
+const Duration _kShortTimeout = const Duration(minutes: 5);
+
 /// When you call this, you can pass additional arguments to pass custom
 /// arguments to flutter test. For example, you might want to call this
 /// script with the parameter --local-engine=host_debug_unopt to
@@ -68,23 +71,19 @@ Future<Null> _verifyInternationalizations() async {
   final EvalResult genResult = await _evalCommand(
     dart,
     <String>[
+      '--preview-dart-2',
       path.join('dev', 'tools', 'gen_localizations.dart'),
     ],
     workingDirectory: flutterRoot,
   );
 
   final String localizationsFile = path.join('packages', 'flutter_localizations', 'lib', 'src', 'l10n', 'localizations.dart');
+  final String expectedResult = await new File(localizationsFile).readAsString();
 
-  final EvalResult sourceContents = await _evalCommand(
-    'cat',
-    <String>[localizationsFile],
-    workingDirectory: flutterRoot,
-  );
-
-  if (genResult.stdout.trim() != sourceContents.stdout.trim()) {
+  if (genResult.stdout.trim() != expectedResult.trim()) {
     stderr
       ..writeln('<<<<<<< $localizationsFile')
-      ..writeln(sourceContents.stdout.trim())
+      ..writeln(expectedResult.trim())
       ..writeln('=======')
       ..writeln(genResult.stdout.trim())
       ..writeln('>>>>>>> gen_localizations')
@@ -107,8 +106,14 @@ Future<Null> _analyzeRepo() async {
     options: <String>['--flutter-repo'],
   );
 
+  // Ensure that all package dependencies are in sync.
+  await _runCommand(flutter, <String>['update-packages', '--verify-only'],
+    workingDirectory: flutterRoot,
+  );
+
   // Analyze all the sample code in the repo
-  await _runCommand(dart, <String>[path.join(flutterRoot, 'dev', 'bots', 'analyze-sample-code.dart')],
+  await _runCommand(dart,
+    <String>['--preview-dart-2', path.join(flutterRoot, 'dev', 'bots', 'analyze-sample-code.dart')],
     workingDirectory: flutterRoot,
   );
 
@@ -119,7 +124,8 @@ Future<Null> _analyzeRepo() async {
   );
 
   // Try an analysis against a big version of the gallery.
-  await _runCommand(dart, <String>[path.join(flutterRoot, 'dev', 'tools', 'mega_gallery.dart')],
+  await _runCommand(dart,
+    <String>['--preview-dart-2', path.join(flutterRoot, 'dev', 'tools', 'mega_gallery.dart')],
     workingDirectory: flutterRoot,
   );
   await _runFlutterAnalyze(path.join(flutterRoot, 'dev', 'benchmarks', 'mega_gallery'),
@@ -129,63 +135,81 @@ Future<Null> _analyzeRepo() async {
   print('${bold}DONE: Analysis successful.$reset');
 }
 
-Future<Null> _runTests() async {
+Future<Null> _runTests({List<String> options: const <String>[]}) async {
   // Verify that the tests actually return failure on failure and success on success.
   final String automatedTests = path.join(flutterRoot, 'dev', 'automated_tests');
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'fail_test.dart'),
+    options: options,
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'pass_test.dart'),
+    options: options,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'crash1_test.dart'),
+    options: options,
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'crash2_test.dart'),
+    options: options,
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'syntax_error_test.broken_dart'),
+    options: options,
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
   await _runFlutterTest(automatedTests,
     script: path.join('test_smoke_test', 'missing_import_test.broken_dart'),
+    options: options,
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
-  await _runCommand(flutter, <String>['drive', '--use-existing-app', '-t', path.join('test_driver', 'failure.dart')],
+  await _runCommand(flutter,
+    <String>['drive', '--use-existing-app']
+        ..addAll(options)
+        ..addAll(<String>[ '-t', path.join('test_driver', 'failure.dart')]),
     workingDirectory: path.join(flutterRoot, 'packages', 'flutter_driver'),
     expectFailure: true,
     printOutput: false,
+    timeout: _kShortTimeout,
   );
 
   // Verify that we correctly generated the version file.
   await _verifyVersion(path.join(flutterRoot, 'version'));
 
   // Run tests.
-  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter'));
-  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_localizations'));
-  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_driver'));
-  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_test'));
+  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_localizations'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_driver'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'packages', 'flutter_test'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'packages',
+        'fuchsia_remote_debug_protocol'), options: options);
   await _pubRunTest(path.join(flutterRoot, 'packages', 'flutter_tools'));
   await _pubRunTest(path.join(flutterRoot, 'dev', 'bots'));
 
-  await _runAllDartTests(path.join(flutterRoot, 'dev', 'devicelab'));
-  await _runFlutterTest(path.join(flutterRoot, 'dev', 'manual_tests'));
-  await _runFlutterTest(path.join(flutterRoot, 'dev', 'tools', 'vitool'));
-  await _runFlutterTest(path.join(flutterRoot, 'examples', 'hello_world'));
-  await _runFlutterTest(path.join(flutterRoot, 'examples', 'layers'));
-  await _runFlutterTest(path.join(flutterRoot, 'examples', 'stocks'));
-  await _runFlutterTest(path.join(flutterRoot, 'examples', 'flutter_gallery'));
-  await _runFlutterTest(path.join(flutterRoot, 'examples', 'catalog'));
+  await _runAllDartTests(path.join(flutterRoot, 'dev', 'devicelab'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'dev', 'manual_tests'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'dev', 'tools', 'vitool'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'examples', 'hello_world'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'examples', 'layers'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'examples', 'stocks'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'examples', 'flutter_gallery'), options: options);
+  await _runFlutterTest(path.join(flutterRoot, 'examples', 'catalog'), options: options);
 
   print('${bold}DONE: All tests successful.$reset');
 }
@@ -271,8 +295,8 @@ Future<EvalResult> _evalCommand(String executable, List<String> arguments, {
   final Future<List<List<int>>> savedStderr = process.stderr.toList();
   final int exitCode = await process.exitCode;
   final EvalResult result = new EvalResult(
-    stdout: UTF8.decode((await savedStdout).expand((List<int> ints) => ints).toList()),
-    stderr: UTF8.decode((await savedStderr).expand((List<int> ints) => ints).toList()),
+    stdout: utf8.decode((await savedStdout).expand((List<int> ints) => ints).toList()),
+    stderr: utf8.decode((await savedStderr).expand((List<int> ints) => ints).toList()),
   );
 
   if (exitCode != 0) {
@@ -296,6 +320,7 @@ Future<Null> _runCommand(String executable, List<String> arguments, {
   bool expectFailure: false,
   bool printOutput: true,
   bool skip: false,
+  Duration timeout: _kLongTimeout,
 }) async {
   final String commandDescription = '${path.relative(executable, from: workingDirectory)} ${arguments.join(' ')}';
   final String relativeWorkingDir = path.relative(workingDirectory);
@@ -312,18 +337,23 @@ Future<Null> _runCommand(String executable, List<String> arguments, {
 
   Future<List<List<int>>> savedStdout, savedStderr;
   if (printOutput) {
-    stdout.addStream(process.stdout);
-    stderr.addStream(process.stderr);
+    await Future.wait(<Future<void>>[
+      stdout.addStream(process.stdout),
+      stderr.addStream(process.stderr)
+    ]);
   } else {
     savedStdout = process.stdout.toList();
     savedStderr = process.stderr.toList();
   }
 
-  final int exitCode = await process.exitCode;
+  final int exitCode = await process.exitCode.timeout(timeout, onTimeout: () {
+    stderr.writeln('Process timed out after $timeout');
+    return expectFailure ? 0 : 1;
+  });
   if ((exitCode == 0) == expectFailure) {
     if (!printOutput) {
-      print(UTF8.decode((await savedStdout).expand((List<int> ints) => ints).toList()));
-      print(UTF8.decode((await savedStderr).expand((List<int> ints) => ints).toList()));
+      stdout.writeln(utf8.decode((await savedStdout).expand((List<int> ints) => ints).toList()));
+      stderr.writeln(utf8.decode((await savedStderr).expand((List<int> ints) => ints).toList()));
     }
     print(
       '$red━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$reset\n'
@@ -335,11 +365,12 @@ Future<Null> _runCommand(String executable, List<String> arguments, {
 }
 
 Future<Null> _runFlutterTest(String workingDirectory, {
-    String script,
-    bool expectFailure: false,
-    bool printOutput: true,
-    List<String> options: const <String>[],
-    bool skip: false,
+  String script,
+  bool expectFailure: false,
+  bool printOutput: true,
+  List<String> options: const <String>[],
+  bool skip: false,
+  Duration timeout: _kLongTimeout,
 }) {
   final List<String> args = <String>['test']..addAll(options);
   if (flutterTestArgs != null && flutterTestArgs.isNotEmpty)
@@ -351,13 +382,19 @@ Future<Null> _runFlutterTest(String workingDirectory, {
     expectFailure: expectFailure,
     printOutput: printOutput,
     skip: skip,
+    timeout: timeout,
   );
 }
 
 Future<Null> _runAllDartTests(String workingDirectory, {
   Map<String, String> environment,
+  List<String> options,
 }) {
-  final List<String> args = <String>['--checked', path.join('test', 'all.dart')];
+  final List<String> args = <String>['--preview-dart-2'];
+  if (options != null) {
+    args.addAll(options);
+  }
+  args.add(path.join('test', 'all.dart'));
   return _runCommand(dart, args,
     workingDirectory: workingDirectory,
     environment: environment,

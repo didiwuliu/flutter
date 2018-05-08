@@ -38,10 +38,10 @@ class CupertinoIcons {
   // Manually maintained list.
 
   /// A thin left chevron.
-  static const IconData left_chevron = const IconData(0xf3f0, fontFamily: iconFont, fontPackage: iconFontPackage, matchTextDirection: true);
+  static const IconData left_chevron = const IconData(0xf3d2, fontFamily: iconFont, fontPackage: iconFontPackage, matchTextDirection: true);
 
   /// A thin right chevron.
-  static const IconData right_chevron = const IconData(0xf3f2, fontFamily: iconFont, fontPackage: iconFontPackage, matchTextDirection: true);
+  static const IconData right_chevron = const IconData(0xf3d3, fontFamily: iconFont, fontPackage: iconFontPackage, matchTextDirection: true);
 
   /// iOS style share icon with an arrow pointing up from a box.
   static const IconData share = const IconData(0xf4ca, fontFamily: iconFont, fontPackage: iconFontPackage);
@@ -90,4 +90,13 @@ class CupertinoIcons {
 
   /// Three solid dots.
   static const IconData ellipsis = const IconData(0xf46a, fontFamily: iconFont, fontPackage: iconFontPackage);
+
+  /// A phone handset outline.
+  static const IconData phone = const IconData(0xf4b8, fontFamily: iconFont, fontPackage: iconFontPackage);
+
+  /// A phone handset.
+  static const IconData phone_solid = const IconData(0xf4b9, fontFamily: iconFont, fontPackage: iconFontPackage);
+
+  /// A solid down arrow.
+  static const IconData down_arrow = const IconData(0xf35d, fontFamily: iconFont, fontPackage: iconFontPackage);
 }

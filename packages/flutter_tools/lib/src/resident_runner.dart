@@ -35,17 +35,24 @@ class FlutterDevice {
   DevFS devFS;
   ApplicationPackage package;
   ResidentCompiler generator;
+  String dillOutputPath;
+  List<String> fileSystemRoots;
+  String fileSystemScheme;
 
   StreamSubscription<String> _loggingSubscription;
 
   FlutterDevice(this.device, {
-    bool previewDart2: false,
-    bool trackWidgetCreation: false,
+    @required bool previewDart2,
+    @required bool trackWidgetCreation,
+    this.dillOutputPath,
+    this.fileSystemRoots,
+    this.fileSystemScheme,
   }) {
     if (previewDart2) {
       generator = new ResidentCompiler(
         artifacts.getArtifactPath(Artifact.flutterPatchedSdkPath),
         trackWidgetCreation: trackWidgetCreation,
+        fileSystemRoots: fileSystemRoots, fileSystemScheme: fileSystemScheme
       );
     }
   }
@@ -188,9 +195,9 @@ class FlutterDevice {
       await view.uiIsolate.flutterDebugDumpLayerTree();
   }
 
-  Future<Null> debugDumpSemanticsTreeInGeometricOrder() async {
+  Future<Null> debugDumpSemanticsTreeInTraversalOrder() async {
     for (FlutterView view in views)
-      await view.uiIsolate.flutterDebugDumpSemanticsTreeInGeometricOrder();
+      await view.uiIsolate.flutterDebugDumpSemanticsTreeInTraversalOrder();
   }
 
   Future<Null> debugDumpSemanticsTreeInInverseHitTestOrder() async {
@@ -369,7 +376,8 @@ class FlutterDevice {
     bool bundleFirstUpload: false,
     bool bundleDirty: false,
     Set<String> fileFilter,
-    bool fullRestart: false
+    bool fullRestart: false,
+    String projectRootPath,
   }) async {
     final Status devFSStatus = logger.startProgress(
       'Syncing files to device ${device.name}...',
@@ -386,7 +394,9 @@ class FlutterDevice {
         bundleDirty: bundleDirty,
         fileFilter: fileFilter,
         generator: generator,
-        fullRestart: fullRestart
+        fullRestart: fullRestart,
+        dillOutputPath: dillOutputPath,
+        projectRootPath: projectRootPath,
       );
     } on DevFSException {
       devFSStatus.cancel();
@@ -495,10 +505,10 @@ abstract class ResidentRunner {
       await device.debugDumpLayerTree();
   }
 
-  Future<Null> _debugDumpSemanticsTreeInGeometricOrder() async {
+  Future<Null> _debugDumpSemanticsTreeInTraversalOrder() async {
     await refreshViews();
     for (FlutterDevice device in flutterDevices)
-      await device.debugDumpSemanticsTreeInGeometricOrder();
+      await device.debugDumpSemanticsTreeInTraversalOrder();
   }
 
   Future<Null> _debugDumpSemanticsTreeInInverseHitTestOrder() async {
@@ -681,7 +691,7 @@ abstract class ResidentRunner {
       }
     } else if (character == 'S') {
       if (supportsServiceProtocol) {
-        await _debugDumpSemanticsTreeInGeometricOrder();
+        await _debugDumpSemanticsTreeInTraversalOrder();
         return true;
       }
     } else if (character == 'U') {
@@ -798,7 +808,7 @@ abstract class ResidentRunner {
     if (path == null)
       return true;
     final FileStat stat = fs.file(path).statSync();
-    if (stat.type != FileSystemEntityType.FILE)
+    if (stat.type != FileSystemEntityType.FILE) // ignore: deprecated_member_use
       return true;
     if (!fs.file(path).existsSync())
       return true;
@@ -822,12 +832,12 @@ abstract class ResidentRunner {
       printStatus('You can dump the widget hierarchy of the app (debugDumpApp) by pressing "w".');
       printStatus('To dump the rendering tree of the app (debugDumpRenderTree), press "t".');
       if (isRunningDebug) {
-        printStatus('For layers (debugDumpLayerTree), use "L"; for accessibility (debugDumpSemantics), use "S" (for geometric order) or "U" (for inverse hit test order).');
+        printStatus('For layers (debugDumpLayerTree), use "L"; for accessibility (debugDumpSemantics), use "S" (for traversal order) or "U" (for inverse hit test order).');
         printStatus('To toggle the widget inspector (WidgetsApp.showWidgetInspectorOverride), press "i".');
         printStatus('To toggle the display of construction lines (debugPaintSizeEnabled), press "p".');
         printStatus('To simulate different operating systems, (defaultTargetPlatform), press "o".');
       } else {
-        printStatus('To dump the accessibility tree (debugDumpSemantics), press "S" (for geometric order) or "U" (for inverse hit test order).');
+        printStatus('To dump the accessibility tree (debugDumpSemantics), press "S" (for traversal order) or "U" (for inverse hit test order).');
       }
       printStatus('To display the performance overlay (WidgetsApp.showPerformanceOverlay), press "P".');
     }

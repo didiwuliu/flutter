@@ -102,8 +102,10 @@ abstract class ScrollPosition extends ViewportOffset with ScrollMetrics {
   ///    create scroll positions and initialize this property.
   final bool keepScrollOffset;
 
-  /// A label that is used in the [toString] output. Intended to aid with
-  /// identifying animation controller instances in debug output.
+  /// A label that is used in the [toString] output.
+  ///
+  /// Intended to aid with identifying animation controller instances in debug
+  /// output.
   final String debugLabel;
 
   @override
@@ -123,10 +125,9 @@ abstract class ScrollPosition extends ViewportOffset with ScrollMetrics {
   double _viewportDimension;
 
   /// Whether [viewportDimension], [minScrollExtent], [maxScrollExtent],
-  /// [outOfRange], and [atEdge] are available yet.
+  /// [outOfRange], and [atEdge] are available.
   ///
-  /// Set to true just before the first time that [applyNewDimensions] is
-  /// called.
+  /// Set to true just before the first time [applyNewDimensions] is called.
   bool get haveDimensions => _haveDimensions;
   bool _haveDimensions = false;
 
@@ -459,7 +460,7 @@ abstract class ScrollPosition extends ViewportOffset with ScrollMetrics {
   /// by just scrolling this position.
   Future<Null> ensureVisible(RenderObject object, {
     double alignment: 0.0,
-    Duration duration: Duration.ZERO,
+    Duration duration: Duration.zero,
     Curve curve: Curves.ease,
   }) {
     assert(object.attached);
@@ -471,7 +472,7 @@ abstract class ScrollPosition extends ViewportOffset with ScrollMetrics {
     if (target == pixels)
       return new Future<Null>.value();
 
-    if (duration == Duration.ZERO) {
+    if (duration == Duration.zero) {
       jumpTo(target);
       return new Future<Null>.value();
     }

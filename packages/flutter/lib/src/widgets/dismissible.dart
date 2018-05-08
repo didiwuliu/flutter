@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:flutter/foundation.dart';
-
 import 'automatic_keep_alive.dart';
 import 'basic.dart';
 import 'debug.dart';
@@ -115,7 +113,7 @@ class Dismissible extends StatefulWidget {
   /// The amount of time the widget will spend contracting before [onDismissed] is called.
   ///
   /// If null, the widget will not contract and [onDismissed] will be called
-  /// immediately after the the widget is dismissed.
+  /// immediately after the widget is dismissed.
   final Duration resizeDuration;
 
   /// The offset threshold the item has to be dragged in order to be considered

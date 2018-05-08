@@ -15,7 +15,7 @@ import '../src/context.dart';
 void main() {
   group('doctor', () {
     testUsingContext('intellij validator', () async {
-      final String installPath = '/path/to/intelliJ';
+      const String installPath = '/path/to/intelliJ';
       final ValidationResult result = await new IntelliJValidatorTestTarget('Test', installPath).validate();
       expect(result.type, ValidationType.partial);
       expect(result.statusInfo, 'version test.test.test');
@@ -50,6 +50,22 @@ void main() {
       expect(message.message, 'Dart Code extension version 4.5.6');
     });
 
+    testUsingContext('vs code validator when 64bit installed', () async {
+      expect(VsCodeValidatorTestTargets.installedWithExtension64bit.title, 'VS Code, 64-bit edition');
+      final ValidationResult result = await VsCodeValidatorTestTargets.installedWithExtension64bit.validate();
+      expect(result.type, ValidationType.installed);
+      expect(result.statusInfo, 'version 1.2.3');
+      expect(result.messages, hasLength(2));
+
+      ValidationMessage message = result.messages
+          .firstWhere((ValidationMessage m) => m.message.startsWith('VS Code '));
+      expect(message.message, 'VS Code at ${VsCodeValidatorTestTargets.validInstall}');
+
+      message = result.messages
+          .firstWhere((ValidationMessage m) => m.message.startsWith('Dart Code '));
+      expect(message.message, 'Dart Code extension version 4.5.6');
+    });
+
     testUsingContext('vs code validator when extension missing', () async {
       final ValidationResult result = await VsCodeValidatorTestTargets.installedWithoutExtension.validate();
       expect(result.type, ValidationType.partial);
@@ -66,7 +82,24 @@ void main() {
     });
   });
 
-  group('doctor with fake validators', () {
+  group('doctor with overriden validators', () {
+    testUsingContext('validate non-verbose output format for run without issues', () async {
+      expect(await doctor.diagnose(verbose: false), isTrue);
+      expect(testLogger.statusText, equals(
+              'Doctor summary (to see all details, run flutter doctor -v):\n'
+              '[✓] Passing Validator (with statusInfo)\n'
+              '[✓] Another Passing Validator (with statusInfo)\n'
+              '[✓] Providing validators is fun (with statusInfo)\n'
+              '\n'
+              '• No issues found!\n'
+      ));
+    }, overrides: <Type, Generator>{
+      DoctorValidatorsProvider: () => new FakeDoctorValidatorsProvider()
+    });
+  });
+
+
+ group('doctor with fake validators', () {
     testUsingContext('validate non-verbose output format for run without issues', () async {
       expect(await new FakeQuietDoctor().diagnose(verbose: false), isTrue);
       expect(testLogger.statusText, equals(
@@ -275,15 +308,31 @@ class FakeQuietDoctor extends Doctor {
   }
 }
 
+/// A DoctorValidatorsProvider that overrides the default validators without
+/// overriding the doctor.
+class FakeDoctorValidatorsProvider implements DoctorValidatorsProvider {
+  @override
+  List<DoctorValidator> get validators {
+    return <DoctorValidator>[
+      new PassingValidator('Passing Validator'),
+      new PassingValidator('Another Passing Validator'),
+      new PassingValidator('Providing validators is fun')
+    ];
+  }
+}
+
 class VsCodeValidatorTestTargets extends VsCodeValidator {
   static final String validInstall = fs.path.join('test', 'data', 'vscode', 'application');
   static final String validExtensions = fs.path.join('test', 'data', 'vscode', 'extensions');
   static final String missingExtensions = fs.path.join('test', 'data', 'vscode', 'notExtensions');
-  VsCodeValidatorTestTargets._(String installDirectory, String extensionDirectory) 
-    : super(new VsCode.fromDirectory(installDirectory, extensionDirectory));
+  VsCodeValidatorTestTargets._(String installDirectory, String extensionDirectory, {String edition}) 
+    : super(new VsCode.fromDirectory(installDirectory, extensionDirectory, edition: edition));
 
   static VsCodeValidatorTestTargets get installedWithExtension =>
     new VsCodeValidatorTestTargets._(validInstall, validExtensions);
+
+    static VsCodeValidatorTestTargets get installedWithExtension64bit =>
+    new VsCodeValidatorTestTargets._(validInstall, validExtensions, edition: '64-bit edition');
 
   static VsCodeValidatorTestTargets get installedWithoutExtension =>
     new VsCodeValidatorTestTargets._(validInstall, missingExtensions);

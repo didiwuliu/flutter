@@ -17,7 +17,7 @@ import 'colors.dart';
 /// [BuildContext] and read the [ThemeData.textTheme] property.
 ///
 /// The following image [from the material design
-/// specification](https://material.io/guidelines/style/typography.html#typography-styles)
+/// specification](https://material.io/go/design-typography#typography-styles)
 /// shows the recommended styles for each of the properties of a [TextTheme].
 /// This image uses the `Roboto` font, which is the font used on Android. On
 /// iOS, the [San Francisco
@@ -33,7 +33,7 @@ import 'colors.dart';
 ///    globally adjusted, such as the color scheme.
 ///  * <http://material.google.com/style/typography.html>
 @immutable
-class TextTheme {
+class TextTheme extends Diagnosticable {
   /// Creates a text theme that uses the given values.
   ///
   /// Rather than creating a new text theme, consider using [Typography.black]
@@ -114,7 +114,7 @@ class TextTheme {
     TextStyle body2,
     TextStyle body1,
     TextStyle caption,
-    TextStyle button
+    TextStyle button,
   }) {
     return new TextTheme(
       display4: display4 ?? this.display4,
@@ -353,6 +353,34 @@ class TextTheme {
       button,
     );
   }
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    final TextTheme defaultTheme = new Typography(platform: defaultTargetPlatform).black;
+    properties.add(new DiagnosticsProperty<TextStyle>('display4', display4,
+        defaultValue: defaultTheme.display4));
+    properties.add(new DiagnosticsProperty<TextStyle>('display3', display3,
+        defaultValue: defaultTheme.display3));
+    properties.add(new DiagnosticsProperty<TextStyle>('display2', display2,
+        defaultValue: defaultTheme.display2));
+    properties.add(new DiagnosticsProperty<TextStyle>('display1', display1,
+        defaultValue: defaultTheme.display1));
+    properties.add(new DiagnosticsProperty<TextStyle>('headline', headline,
+        defaultValue: defaultTheme.headline));
+    properties
+        .add(new DiagnosticsProperty<TextStyle>('title', title, defaultValue: defaultTheme.title));
+    properties.add(
+        new DiagnosticsProperty<TextStyle>('subhead', subhead, defaultValue: defaultTheme.subhead));
+    properties
+        .add(new DiagnosticsProperty<TextStyle>('body2', body2, defaultValue: defaultTheme.body2));
+    properties
+        .add(new DiagnosticsProperty<TextStyle>('body1', body1, defaultValue: defaultTheme.body1));
+    properties.add(
+        new DiagnosticsProperty<TextStyle>('caption', caption, defaultValue: defaultTheme.caption));
+    properties.add(
+        new DiagnosticsProperty<TextStyle>('button', button, defaultValue: defaultTheme.button));
+  }
 }
 
 /// The two material design text themes.
@@ -373,7 +401,7 @@ class TextTheme {
 ///  * <http://material.google.com/style/typography.html>
 class Typography {
   /// Creates the default typography for the specified platform.
-  factory Typography({ @required TargetPlatform platform }) {
+  factory Typography({@required TargetPlatform platform}) {
     assert(platform != null);
     switch (platform) {
       case TargetPlatform.android:
@@ -407,8 +435,8 @@ class Typography {
 /// expected to use [Theme.of] to get [TextTheme] objects fully populated with
 /// font properties.
 ///
-/// See also: https://material.io/guidelines/style/typography.html
-// TODO(yjbanov): implement font fallback (see "Font stack" at https://material.io/guidelines/style/typography.html)
+/// See also: https://material.io/go/design-typography
+// TODO(yjbanov): implement font fallback (see "Font stack" at https://material.io/go/design-typography)
 class _MaterialTextColorThemes {
   static const TextTheme blackMountainView = const TextTheme(
     display4: const TextStyle(debugLabel: 'blackMountainView display4', fontFamily: 'Roboto',         inherit: true, color: Colors.black54, decoration: TextDecoration.none),
@@ -468,7 +496,7 @@ class _MaterialTextColorThemes {
 }
 
 /// Defines text geometries for the three language categories defined in
-/// https://material.io/guidelines/style/typography.html.
+/// https://material.io/go/design-typography.
 class MaterialTextGeometry {
   /// The name of the English-like script category.
   static const String englishLikeCategory = 'English-like';

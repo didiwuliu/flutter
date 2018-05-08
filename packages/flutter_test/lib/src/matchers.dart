@@ -2,15 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:meta/meta.dart';
-import 'package:test/test.dart';
+import 'package:test/test.dart' hide TypeMatcher;
+import 'package:test/src/frontend/async_matcher.dart'; // ignore: implementation_imports
 
+import 'binding.dart';
 import 'finders.dart';
+import 'goldens.dart';
 
 /// Asserts that the [Finder] matches no widgets in the widget tree.
 ///
@@ -234,7 +240,36 @@ Matcher isMethodCall(String name, {@required dynamic arguments}) {
 /// the area you expect to paint in for [areaToCompare] to catch errors where
 /// the path draws outside the expected area.
 Matcher coversSameAreaAs(Path expectedPath, {@required Rect areaToCompare, int sampleSize = 20})
-  => new _CoversSameAreaAs(expectedPath, areaToCompare: areaToCompare, sampleSize: sampleSize); 
+  => new _CoversSameAreaAs(expectedPath, areaToCompare: areaToCompare, sampleSize: sampleSize);
+
+/// Asserts that a [Finder] matches exactly one widget whose rendered image
+/// matches the golden image file identified by [key].
+///
+/// [key] may be either a [Uri] or a [String] representation of a URI.
+///
+/// This is an asynchronous matcher, meaning that callers should use
+/// [expectLater] when using this matcher and await the future returned by
+/// [expectLater].
+///
+/// ## Sample code
+///
+/// ```dart
+/// await expectLater(find.text('Save'), matchesGoldenFile('save.png'));
+/// ```
+///
+/// See also:
+///
+///  * [goldenFileComparator], which acts as the backend for this matcher.
+///  * [flutter_test] for a discussion of test configurations, whereby callers
+///    may swap out the backend for this matcher.
+Matcher matchesGoldenFile(dynamic key) {
+  if (key is Uri) {
+    return new _MatchesGoldenFile(key);
+  } else if (key is String) {
+    return new _MatchesGoldenFile.forStringPath(key);
+  }
+  throw new ArgumentError('Unexpected type for golden file: ${key.runtimeType}');
+}
 
 class _FindsWidgetMatcher extends Matcher {
   const _FindsWidgetMatcher(this.min, this.max);
@@ -645,7 +680,7 @@ double _rectDistance(Rect a, Rect b) {
 
 double _sizeDistance(Size a, Size b) {
   final Offset delta = b - a;
-  return math.sqrt(delta.dx * delta.dx + delta.dy * delta.dy);
+  return delta.distance;
 }
 
 /// Asserts that two values are within a certain distance from each other.
@@ -659,6 +694,9 @@ double _sizeDistance(Size a, Size b) {
 ///  * [Color], whose distance is the maximum component-wise delta.
 ///  * [Offset], whose distance is the Euclidean distance computed using the
 ///    method [Offset.distance].
+///  * [Rect], whose distance is the maximum component-wise delta.
+///  * [Size], whose distance is the [Offset.distance] of the offset computed as
+///    the difference between two sizes.
 ///  * [int], whose distance is the absolute difference between two integers.
 ///  * [double], whose distance is the absolute difference between two doubles.
 ///
@@ -1179,4 +1217,52 @@ class _CoversSameAreaAs extends Matcher {
   @override
   Description describe(Description description) =>
     description.add('covers expected area and only expected area');
+}
+
+class _MatchesGoldenFile extends AsyncMatcher {
+  const _MatchesGoldenFile(this.key);
+
+  _MatchesGoldenFile.forStringPath(String path) : key = Uri.parse(path);
+
+  final Uri key;
+
+  @override
+  Future<String> matchAsync(covariant Finder finder) async {
+    final Iterable<Element> elements = finder.evaluate();
+    if (elements.isEmpty) {
+      return 'could not be rendered because no widget was found';
+    } else if (elements.length > 1) {
+      return 'matched too many widgets';
+    }
+    final Element element = elements.single;
+
+    RenderObject renderObject = element.renderObject;
+    while (!renderObject.isRepaintBoundary) {
+      renderObject = renderObject.parent;
+      assert(renderObject != null);
+    }
+    assert(!renderObject.debugNeedsPaint);
+    final OffsetLayer layer = renderObject.layer;
+    final Future<ui.Image> imageFuture = layer.toImage(renderObject.paintBounds);
+
+    final TestWidgetsFlutterBinding binding = TestWidgetsFlutterBinding.ensureInitialized();
+    return binding.runAsync<String>(() async {
+      final ui.Image image = await imageFuture;
+      final ByteData bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (autoUpdateGoldenFiles) {
+        await goldenFileComparator.update(key, bytes.buffer.asUint8List());
+      } else {
+        try {
+          final bool success = await goldenFileComparator.compare(bytes.buffer.asUint8List(), key);
+          return success ? null : 'does not match';
+        } on TestFailure catch (ex) {
+          return ex.message;
+        }
+      }
+    });
+  }
+
+  @override
+  Description describe(Description description) =>
+      description.add('one widget whose rasterized image matches golden image "$key"');
 }
