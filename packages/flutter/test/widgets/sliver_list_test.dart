@@ -1,18 +1,21 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @dart = 2.8
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 void main() {
   testWidgets('SliverList reverse children (with keys)', (WidgetTester tester) async {
-    final List<int> items = new List<int>.generate(20, (int i) => i);
+    final List<int> items = List<int>.generate(20, (int i) => i);
     const double itemHeight = 300.0;
     const double viewportHeight = 500.0;
 
     const double scrollPosition = 18 * itemHeight;
-    final ScrollController controller = new ScrollController(initialScrollOffset: scrollPosition);
+    final ScrollController controller = ScrollController(initialScrollOffset: scrollPosition);
 
     await tester.pumpWidget(_buildSliverList(
       items: items,
@@ -54,12 +57,12 @@ void main() {
   });
 
   testWidgets('SliverList replace children (with keys)', (WidgetTester tester) async {
-    final List<int> items = new List<int>.generate(20, (int i) => i);
+    final List<int> items = List<int>.generate(20, (int i) => i);
     const double itemHeight = 300.0;
     const double viewportHeight = 500.0;
 
     const double scrollPosition = 18 * itemHeight;
-    final ScrollController controller = new ScrollController(initialScrollOffset: scrollPosition);
+    final ScrollController controller = ScrollController(initialScrollOffset: scrollPosition);
 
     await tester.pumpWidget(_buildSliverList(
       items: items,
@@ -76,7 +79,7 @@ void main() {
     expect(find.text('Tile 19'), findsOneWidget);
 
     await tester.pumpWidget(_buildSliverList(
-      items: items.map((int i) => i + 100).toList(),
+      items: items.map<int>((int i) => i + 100).toList(),
       controller: controller,
       itemHeight: itemHeight,
       viewportHeight: viewportHeight,
@@ -106,12 +109,12 @@ void main() {
   });
 
   testWidgets('SliverList replace with shorter children list (with keys)', (WidgetTester tester) async {
-    final List<int> items = new List<int>.generate(20, (int i) => i);
+    final List<int> items = List<int>.generate(20, (int i) => i);
     const double itemHeight = 300.0;
     const double viewportHeight = 500.0;
 
     final double scrollPosition = items.length * itemHeight - viewportHeight;
-    final ScrollController controller = new ScrollController(initialScrollOffset: scrollPosition);
+    final ScrollController controller = ScrollController(initialScrollOffset: scrollPosition);
 
     await tester.pumpWidget(_buildSliverList(
       items: items,
@@ -135,7 +138,7 @@ void main() {
       viewportHeight: viewportHeight,
     ));
     final int frames = await tester.pumpAndSettle();
-    expect(frames, greaterThan(1)); // ensure animation to bring tile17 into view
+    expect(frames, 1); // No animation when content shrinks suddenly.
 
     expect(controller.offset, scrollPosition - itemHeight);
     expect(find.text('Tile 0'), findsNothing);
@@ -144,30 +147,193 @@ void main() {
     expect(find.text('Tile 18'), findsOneWidget);
     expect(find.text('Tile 19'), findsNothing);
   });
+
+  testWidgets('SliverList should layout first child in case of child reordering', (WidgetTester tester) async {
+    // Regression test for https://github.com/flutter/flutter/issues/35904.
+    List<String> items = <String>['1', '2'];
+
+    await tester.pumpWidget(_buildSliverListRenderWidgetChild(items));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tile 1'), findsOneWidget);
+    expect(find.text('Tile 2'), findsOneWidget);
+
+    items = items.reversed.toList();
+    await tester.pumpWidget(_buildSliverListRenderWidgetChild(items));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tile 1'), findsOneWidget);
+    expect(find.text('Tile 2'), findsOneWidget);
+  });
+
+  testWidgets('SliverList should recalculate inaccurate layout offset case 1', (WidgetTester tester) async {
+    // Regression test for https://github.com/flutter/flutter/issues/42142.
+    final List<int> items = List<int>.generate(20, (int i) => i);
+    final ScrollController controller = ScrollController();
+    await tester.pumpWidget(
+      _buildSliverList(
+        items: List<int>.from(items),
+        controller: controller,
+        itemHeight: 50,
+        viewportHeight: 200,
+      )
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.text('Tile 2'), const Offset(0.0, -1000.0));
+    await tester.pumpAndSettle();
+
+    // Viewport should be scrolled to the end of list.
+    expect(controller.offset, 800.0);
+    expect(find.text('Tile 15'), findsNothing);
+    expect(find.text('Tile 16'), findsOneWidget);
+    expect(find.text('Tile 17'), findsOneWidget);
+    expect(find.text('Tile 18'), findsOneWidget);
+    expect(find.text('Tile 19'), findsOneWidget);
+
+    // Prepends item to the list.
+    items.insert(0, -1);
+    await tester.pumpWidget(
+      _buildSliverList(
+        items: List<int>.from(items),
+        controller: controller,
+        itemHeight: 50,
+        viewportHeight: 200,
+      )
+    );
+    await tester.pump();
+    // We need second pump to ensure the scheduled animation gets run.
+    await tester.pumpAndSettle();
+    // Scroll offset should stay the same, and the items in viewport should be
+    // shifted by one.
+    expect(controller.offset, 800.0);
+    expect(find.text('Tile 14'), findsNothing);
+    expect(find.text('Tile 15'), findsOneWidget);
+    expect(find.text('Tile 16'), findsOneWidget);
+    expect(find.text('Tile 17'), findsOneWidget);
+    expect(find.text('Tile 18'), findsOneWidget);
+    expect(find.text('Tile 19'), findsNothing);
+
+    // Drags back to beginning and newly added item is visible.
+    await tester.drag(find.text('Tile 16'), const Offset(0.0, 1000.0));
+    await tester.pumpAndSettle();
+    expect(controller.offset, 0.0);
+    expect(find.text('Tile -1'), findsOneWidget);
+    expect(find.text('Tile 0'), findsOneWidget);
+    expect(find.text('Tile 1'), findsOneWidget);
+    expect(find.text('Tile 2'), findsOneWidget);
+    expect(find.text('Tile 3'), findsNothing);
+
+  });
+
+  testWidgets('SliverList should recalculate inaccurate layout offset case 2', (WidgetTester tester) async {
+    // Regression test for https://github.com/flutter/flutter/issues/42142.
+    final List<int> items = List<int>.generate(20, (int i) => i);
+    final ScrollController controller = ScrollController();
+    await tester.pumpWidget(
+      _buildSliverList(
+        items: List<int>.from(items),
+        controller: controller,
+        itemHeight: 50,
+        viewportHeight: 200,
+      )
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.text('Tile 2'), const Offset(0.0, -1000.0));
+    await tester.pumpAndSettle();
+
+    // Viewport should be scrolled to the end of list.
+    expect(controller.offset, 800.0);
+    expect(find.text('Tile 15'), findsNothing);
+    expect(find.text('Tile 16'), findsOneWidget);
+    expect(find.text('Tile 17'), findsOneWidget);
+    expect(find.text('Tile 18'), findsOneWidget);
+    expect(find.text('Tile 19'), findsOneWidget);
+
+    // Reorders item to the front. This should make item 19 to be first child
+    // with layout offset = null.
+    final int swap = items[19];
+    items[19] = items[3];
+    items[3] = swap;
+
+    await tester.pumpWidget(
+      _buildSliverList(
+        items: List<int>.from(items),
+        controller: controller,
+        itemHeight: 50,
+        viewportHeight: 200,
+      )
+    );
+    await tester.pump();
+    // We need second pump to ensure the scheduled animation gets run.
+    await tester.pumpAndSettle();
+    // Scroll offset should stay the same
+    expect(controller.offset, 800.0);
+    expect(find.text('Tile 14'), findsNothing);
+    expect(find.text('Tile 15'), findsNothing);
+    expect(find.text('Tile 16'), findsOneWidget);
+    expect(find.text('Tile 17'), findsOneWidget);
+    expect(find.text('Tile 18'), findsOneWidget);
+    expect(find.text('Tile 3'), findsOneWidget);
+  });
+}
+
+Widget _buildSliverListRenderWidgetChild(List<String> items) {
+  return MaterialApp(
+    home: Directionality(
+      textDirection: TextDirection.ltr,
+      child: Material(
+        child: Container(
+          height: 500,
+          child: CustomScrollView(
+            controller: ScrollController(),
+            slivers: <Widget>[
+              SliverList(
+                delegate: SliverChildListDelegate(
+                  items.map<Widget>((String item) {
+                    return Chip(
+                      key: Key(item),
+                      label: Text('Tile $item'),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 Widget _buildSliverList({
-  List<int> items: const <int>[],
+  List<int> items = const <int>[],
   ScrollController controller,
-  double itemHeight: 500.0,
-  double viewportHeight: 300.0,
+  double itemHeight = 500.0,
+  double viewportHeight = 300.0,
 }) {
-  return new Directionality(
+  return Directionality(
     textDirection: TextDirection.ltr,
-    child: new Center(
-      child: new Container(
+    child: Center(
+      child: Container(
         height: viewportHeight,
-        child: new CustomScrollView(
+        child: CustomScrollView(
           controller: controller,
           slivers: <Widget>[
-            new SliverList(
-              delegate: new SliverChildBuilderDelegate(
-                    (BuildContext context, int i) {
-                  return new Container(
-                    key: new ValueKey<int>(items[i]),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (BuildContext context, int i) {
+                  return Container(
+                    key: ValueKey<int>(items[i]),
                     height: itemHeight,
-                    child: new Text('Tile ${items[i]}'),
+                    child: Text('Tile ${items[i]}'),
                   );
+                },
+                findChildIndexCallback: (Key key) {
+                  final ValueKey<int> valueKey = key as ValueKey<int>;
+                  final int index = items.indexOf(valueKey.value);
+                  return index == -1 ? null : index;
                 },
                 childCount: items.length,
               ),

@@ -1,11 +1,14 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:flutter/gestures.dart';
-import 'package:test/test.dart';
+// @dart = 2.8
 
-typedef void GestureArenaCallback(Object key);
+import 'package:flutter/gestures.dart';
+
+import '../flutter_test_alternative.dart';
+
+typedef GestureArenaCallback = void Function(Object key);
 
 const int primaryKey = 4;
 
@@ -27,9 +30,9 @@ class TestGestureArenaMember extends GestureArenaMember {
 }
 
 class GestureTester {
-  GestureArenaManager arena = new GestureArenaManager();
-  TestGestureArenaMember first = new TestGestureArenaMember();
-  TestGestureArenaMember second = new TestGestureArenaMember();
+  GestureArenaManager arena = GestureArenaManager();
+  TestGestureArenaMember first = TestGestureArenaMember();
+  TestGestureArenaMember second = TestGestureArenaMember();
 
   GestureArenaEntry firstEntry;
   void addFirst() {
@@ -65,7 +68,7 @@ class GestureTester {
 
 void main() {
   test('Should win by accepting', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -75,7 +78,7 @@ void main() {
   });
 
   test('Should win by sweep', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -85,7 +88,7 @@ void main() {
   });
 
   test('Should win on release after hold sweep release', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -99,7 +102,7 @@ void main() {
   });
 
   test('Should win on sweep after hold release sweep', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -113,7 +116,7 @@ void main() {
   });
 
   test('Only first winner should win', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -124,7 +127,7 @@ void main() {
   });
 
   test('Only first winner should win, regardless of order', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.arena.close(primaryKey);
@@ -135,7 +138,7 @@ void main() {
   });
 
   test('Win before close is delayed to close', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.expectNothing();
@@ -146,7 +149,7 @@ void main() {
   });
 
   test('Win before close is delayed to close, and only first winner should win', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.expectNothing();
@@ -158,7 +161,7 @@ void main() {
   });
 
   test('Win before close is delayed to close, and only first winner should win, regardless of order', () {
-    final GestureTester tester = new GestureTester();
+    final GestureTester tester = GestureTester();
     tester.addFirst();
     tester.addSecond();
     tester.expectNothing();

@@ -1,15 +1,18 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:test/test.dart';
 
-typedef void HandleEventCallback(PointerEvent event);
+import '../flutter_test_alternative.dart';
+
+typedef HandleEventCallback = void Function(PointerEvent event);
 
 class TestGestureFlutterBinding extends BindingBase with GestureBinding {
   HandleEventCallback callback;
@@ -21,14 +24,14 @@ class TestGestureFlutterBinding extends BindingBase with GestureBinding {
     super.handleEvent(event, entry);
   }
 
-  static const ui.PointerDataPacket packet = const ui.PointerDataPacket(
-    data: const <ui.PointerData>[
-      const ui.PointerData(change: ui.PointerChange.down),
-      const ui.PointerData(change: ui.PointerChange.up),
-    ]
+  static const ui.PointerDataPacket packet = ui.PointerDataPacket(
+    data: <ui.PointerData>[
+      ui.PointerData(change: ui.PointerChange.down),
+      ui.PointerData(change: ui.PointerChange.up),
+    ],
   );
 
-  Future<Null> test(VoidCallback callback) {
+  Future<void> test(VoidCallback callback) {
     assert(callback != null);
     return _binding.lockEvents(() async {
       ui.window.onPointerDataPacket(packet);
@@ -37,10 +40,10 @@ class TestGestureFlutterBinding extends BindingBase with GestureBinding {
   }
 }
 
-TestGestureFlutterBinding _binding = new TestGestureFlutterBinding();
+TestGestureFlutterBinding _binding = TestGestureFlutterBinding();
 
 void ensureTestGestureBinding() {
-  _binding ??= new TestGestureFlutterBinding();
+  _binding ??= TestGestureFlutterBinding();
   assert(GestureBinding.instance != null);
 }
 

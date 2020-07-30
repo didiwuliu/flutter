@@ -1,10 +1,13 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 
 import 'basic.dart';
 import 'framework.dart';
@@ -79,42 +82,53 @@ import 'scrollable.dart';
 /// with some remaining space to allocate as specified by its
 /// [Column.mainAxisAlignment] argument.
 ///
-/// In this example, the children are spaced out equally, unless there's no
-/// more room, in which case they stack vertically and scroll.
-///
-/// ```dart
-/// new LayoutBuilder(
-///   builder: (BuildContext context, BoxConstraints viewportConstraints) {
-///     return SingleChildScrollView(
-///       child: new ConstrainedBox(
-///         constraints: new BoxConstraints(
-///           minHeight: viewportConstraints.maxHeight,
-///         ),
-///         child: new Column(
-///           mainAxisSize: MainAxisSize.min,
-///           mainAxisAlignment: MainAxisAlignment.spaceAround,
-///           children: <Widget>[
-///             new Container(
-///               // A fixed-height child.
-///               color: Colors.yellow,
-///               height: 120.0,
-///             ),
-///             new Container(
-///               // Another fixed-height child.
-///               color: Colors.green,
-///               height: 120.0,
-///             ),
-///           ],
-///         ),
-///       ),
-///     );
-///   },
-/// )
-/// ```
+/// {@tool dartpad --template=stateless_widget_material}
+/// In this example, the children are spaced out equally, unless there's no more
+/// room, in which case they stack vertically and scroll.
 ///
 /// When using this technique, [Expanded] and [Flexible] are not useful, because
 /// in both cases the "available space" is infinite (since this is in a viewport).
 /// The next section describes a technique for providing a maximum height constraint.
+///
+/// ```dart
+///  Widget build(BuildContext context) {
+///    return DefaultTextStyle(
+///      style: Theme.of(context).textTheme.bodyText2,
+///      child: LayoutBuilder(
+///        builder: (BuildContext context, BoxConstraints viewportConstraints) {
+///          return SingleChildScrollView(
+///            child: ConstrainedBox(
+///              constraints: BoxConstraints(
+///                minHeight: viewportConstraints.maxHeight,
+///              ),
+///              child: Column(
+///                mainAxisSize: MainAxisSize.min,
+///                mainAxisAlignment: MainAxisAlignment.spaceAround,
+///                children: <Widget>[
+///                  Container(
+///                    // A fixed-height child.
+///                    color: const Color(0xffeeee00), // Yellow
+///                    height: 120.0,
+///                    alignment: Alignment.center,
+///                    child: const Text('Fixed Height Content'),
+///                  ),
+///                  Container(
+///                    // Another fixed-height child.
+///                    color: const Color(0xff008000), // Green
+///                    height: 120.0,
+///                    alignment: Alignment.center,
+///                    child: const Text('Fixed Height Content'),
+///                  ),
+///                ],
+///              ),
+///            ),
+///          );
+///        },
+///      ),
+///    );
+///  }
+/// ```
+/// {@end-tool}
 ///
 /// ### Expanding content to fit the viewport
 ///
@@ -134,39 +148,6 @@ import 'scrollable.dart';
 /// The widget that is to grow to fit the remaining space so provided is wrapped
 /// in an [Expanded] widget.
 ///
-/// ```dart
-/// new LayoutBuilder(
-///   builder: (BuildContext context, BoxConstraints viewportConstraints) {
-///     return SingleChildScrollView(
-///       child: new ConstrainedBox(
-///         constraints: new BoxConstraints(
-///           minHeight: viewportConstraints.maxHeight,
-///         ),
-///         child: new IntrinsicHeight(
-///           child: new Column(
-///             children: <Widget>[
-///               new Container(
-///                 // A fixed-height child.
-///                 color: Colors.yellow,
-///                 height: 120.0,
-///               ),
-///               new Expanded(
-///                 // A flexible child that will grow to fit the viewport but
-///                 // still be at least as big as necessary to fit its contents.
-///                 child: new Container(
-///                   color: Colors.blue,
-///                   height: 120.0,
-///                 ),
-///               ),
-///             ],
-///           ),
-///         ),
-///       ),
-///     );
-///   },
-/// )
-/// ```
-///
 /// This technique is quite expensive, as it more or less requires that the contents
 /// of the viewport be laid out twice (once to find their intrinsic dimensions, and
 /// once to actually lay them out). The number of widgets within the column should
@@ -175,29 +156,80 @@ import 'scrollable.dart';
 /// so that the intrinsic sizing algorithm can short-circuit the computation when it
 /// reaches those parts of the subtree.
 ///
+/// {@tool dartpad --template=stateless_widget_material}
+/// In this example, the column becomes either as big as viewport, or as big as
+/// the contents, whichever is biggest.
+///
+/// ```dart
+///  Widget build(BuildContext context) {
+///    return DefaultTextStyle(
+///      style: Theme.of(context).textTheme.bodyText2,
+///      child: LayoutBuilder(
+///        builder: (BuildContext context, BoxConstraints viewportConstraints) {
+///          return SingleChildScrollView(
+///            child: ConstrainedBox(
+///              constraints: BoxConstraints(
+///                minHeight: viewportConstraints.maxHeight,
+///              ),
+///              child: IntrinsicHeight(
+///                child: Column(
+///                  children: <Widget>[
+///                    Container(
+///                      // A fixed-height child.
+///                      color: const Color(0xffeeee00), // Yellow
+///                      height: 120.0,
+///                      alignment: Alignment.center,
+///                      child: const Text('Fixed Height Content'),
+///                    ),
+///                    Expanded(
+///                      // A flexible child that will grow to fit the viewport but
+///                      // still be at least as big as necessary to fit its contents.
+///                      child: Container(
+///                        color: const Color(0xffee0000), // Red
+///                        height: 120.0,
+///                        alignment: Alignment.center,
+///                        child: const Text('Flexible Content'),
+///                      ),
+///                    ),
+///                  ],
+///                ),
+///              ),
+///            ),
+///          );
+///        },
+///      ),
+///    );
+///  }
+/// ```
+/// {@end-tool}
+///
 /// See also:
 ///
-/// * [ListView], which handles multiple children in a scrolling list.
-/// * [GridView], which handles multiple children in a scrolling grid.
-/// * [PageView], for a scrollable that works page by page.
-/// * [Scrollable], which handles arbitrary scrolling effects.
+///  * [ListView], which handles multiple children in a scrolling list.
+///  * [GridView], which handles multiple children in a scrolling grid.
+///  * [PageView], for a scrollable that works page by page.
+///  * [Scrollable], which handles arbitrary scrolling effects.
 class SingleChildScrollView extends StatelessWidget {
   /// Creates a box in which a single widget can be scrolled.
-  SingleChildScrollView({
+  const SingleChildScrollView({
     Key key,
-    this.scrollDirection: Axis.vertical,
-    this.reverse: false,
+    this.scrollDirection = Axis.vertical,
+    this.reverse = false,
     this.padding,
     bool primary,
     this.physics,
     this.controller,
     this.child,
+    this.dragStartBehavior = DragStartBehavior.start,
+    this.clipBehavior = Clip.hardEdge,
   }) : assert(scrollDirection != null),
+       assert(dragStartBehavior != null),
+       assert(clipBehavior != null),
        assert(!(controller != null && primary == true),
           'Primary ScrollViews obtain their ScrollController via inheritance from a PrimaryScrollController widget. '
           'You cannot both set primary to true and pass an explicit controller.'
        ),
-       primary = primary ?? controller == null && scrollDirection == Axis.vertical,
+       primary = primary ?? controller == null && identical(scrollDirection, Axis.vertical),
        super(key: key);
 
   /// The axis along which the scroll view scrolls.
@@ -259,6 +291,14 @@ class SingleChildScrollView extends StatelessWidget {
   /// {@macro flutter.widgets.child}
   final Widget child;
 
+  /// {@macro flutter.widgets.scrollable.dragStartBehavior}
+  final DragStartBehavior dragStartBehavior;
+
+  /// {@macro flutter.widgets.Clip}
+  ///
+  /// Defaults to [Clip.hardEdge].
+  final Clip clipBehavior;
+
   AxisDirection _getDirection(BuildContext context) {
     return getAxisDirectionFromAxisReverseAndDirectionality(context, scrollDirection, reverse);
   }
@@ -268,24 +308,26 @@ class SingleChildScrollView extends StatelessWidget {
     final AxisDirection axisDirection = _getDirection(context);
     Widget contents = child;
     if (padding != null)
-      contents = new Padding(padding: padding, child: contents);
+      contents = Padding(padding: padding, child: contents);
     final ScrollController scrollController = primary
         ? PrimaryScrollController.of(context)
         : controller;
-    final Scrollable scrollable = new Scrollable(
+    final Scrollable scrollable = Scrollable(
+      dragStartBehavior: dragStartBehavior,
       axisDirection: axisDirection,
       controller: scrollController,
       physics: physics,
       viewportBuilder: (BuildContext context, ViewportOffset offset) {
-        return new _SingleChildViewport(
+        return _SingleChildViewport(
           axisDirection: axisDirection,
           offset: offset,
           child: contents,
+          clipBehavior: clipBehavior,
         );
       },
     );
     return primary && scrollController != null
-      ? new PrimaryScrollController.none(child: scrollable)
+      ? PrimaryScrollController.none(child: scrollable)
       : scrollable;
   }
 }
@@ -293,20 +335,24 @@ class SingleChildScrollView extends StatelessWidget {
 class _SingleChildViewport extends SingleChildRenderObjectWidget {
   const _SingleChildViewport({
     Key key,
-    this.axisDirection: AxisDirection.down,
+    this.axisDirection = AxisDirection.down,
     this.offset,
     Widget child,
+    @required this.clipBehavior,
   }) : assert(axisDirection != null),
+       assert(clipBehavior != null),
        super(key: key, child: child);
 
   final AxisDirection axisDirection;
   final ViewportOffset offset;
+  final Clip clipBehavior;
 
   @override
   _RenderSingleChildViewport createRenderObject(BuildContext context) {
-    return new _RenderSingleChildViewport(
+    return _RenderSingleChildViewport(
       axisDirection: axisDirection,
       offset: offset,
+      clipBehavior: clipBehavior,
     );
   }
 
@@ -315,22 +361,26 @@ class _SingleChildViewport extends SingleChildRenderObjectWidget {
     // Order dependency: The offset setter reads the axis direction.
     renderObject
       ..axisDirection = axisDirection
-      ..offset = offset;
+      ..offset = offset
+      ..clipBehavior = clipBehavior;
   }
 }
 
 class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMixin<RenderBox> implements RenderAbstractViewport {
   _RenderSingleChildViewport({
-    AxisDirection axisDirection: AxisDirection.down,
+    AxisDirection axisDirection = AxisDirection.down,
     @required ViewportOffset offset,
-    double cacheExtent: RenderAbstractViewport.defaultCacheExtent,
+    double cacheExtent = RenderAbstractViewport.defaultCacheExtent,
     RenderBox child,
+    @required Clip clipBehavior,
   }) : assert(axisDirection != null),
        assert(offset != null),
        assert(cacheExtent != null),
+       assert(clipBehavior != null),
        _axisDirection = axisDirection,
        _offset = offset,
-       _cacheExtent = cacheExtent {
+       _cacheExtent = cacheExtent,
+       _clipBehavior = clipBehavior {
     this.child = child;
   }
 
@@ -371,6 +421,20 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
     markNeedsLayout();
   }
 
+  /// {@macro flutter.widgets.Clip}
+  ///
+  /// Defaults to [Clip.none], and must not be null.
+  Clip get clipBehavior => _clipBehavior;
+  Clip _clipBehavior = Clip.none;
+  set clipBehavior(Clip value) {
+    assert(value != null);
+    if (value != _clipBehavior) {
+      _clipBehavior = value;
+      markNeedsPaint();
+      markNeedsSemanticsUpdate();
+    }
+  }
+
   void _hasScrolled() {
     markNeedsPaint();
     markNeedsSemanticsUpdate();
@@ -381,7 +445,7 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
     // We don't actually use the offset argument in BoxParentData, so let's
     // avoid allocating it at all.
     if (child.parentData is! ParentData)
-      child.parentData = new ParentData();
+      child.parentData = ParentData();
   }
 
   @override
@@ -473,6 +537,7 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
 
   @override
   void performLayout() {
+    final BoxConstraints constraints = this.constraints;
     if (child == null) {
       size = constraints.smallest;
     } else {
@@ -484,17 +549,19 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
     offset.applyContentDimensions(_minScrollExtent, _maxScrollExtent);
   }
 
-  Offset get _paintOffset {
+  Offset get _paintOffset => _paintOffsetForPosition(offset.pixels);
+
+  Offset _paintOffsetForPosition(double position) {
     assert(axisDirection != null);
     switch (axisDirection) {
       case AxisDirection.up:
-        return new Offset(0.0, _offset.pixels - child.size.height + size.height);
+        return Offset(0.0, position - child.size.height + size.height);
       case AxisDirection.down:
-        return new Offset(0.0, -_offset.pixels);
+        return Offset(0.0, -position);
       case AxisDirection.left:
-        return new Offset(_offset.pixels - child.size.width + size.width, 0.0);
+        return Offset(position - child.size.width + size.width, 0.0);
       case AxisDirection.right:
-        return new Offset(-_offset.pixels, 0.0);
+        return Offset(-position, 0.0);
     }
     return null;
   }
@@ -513,8 +580,8 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
         context.paintChild(child, offset + paintOffset);
       }
 
-      if (_shouldClipAtPaintOffset(paintOffset)) {
-        context.pushClipRect(needsCompositing, offset, Offset.zero & size, paintContents);
+      if (_shouldClipAtPaintOffset(paintOffset) && clipBehavior != Clip.none) {
+        context.pushClipRect(needsCompositing, offset, Offset.zero & size, paintContents, clipBehavior: clipBehavior);
       } else {
         paintContents(context, offset);
       }
@@ -535,22 +602,29 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
   }
 
   @override
-  bool hitTestChildren(HitTestResult result, { Offset position }) {
+  bool hitTestChildren(BoxHitTestResult result, { Offset position }) {
     if (child != null) {
-      final Offset transformed = position + -_paintOffset;
-      return child.hitTest(result, position: transformed);
+      return result.addWithPaintOffset(
+        offset: _paintOffset,
+        position: position,
+        hitTest: (BoxHitTestResult result, Offset transformed) {
+          assert(transformed == position + -_paintOffset);
+          return child.hitTest(result, position: transformed);
+        },
+      );
     }
     return false;
   }
 
   @override
-  double getOffsetToReveal(RenderObject target, double alignment) {
+  RevealedOffset getOffsetToReveal(RenderObject target, double alignment, { Rect rect }) {
+    rect ??= target.paintBounds;
     if (target is! RenderBox)
-      return offset.pixels;
+      return RevealedOffset(offset: offset.pixels, rect: rect);
 
-    final RenderBox targetBox = target;
-    final Matrix4 transform = targetBox.getTransformTo(this);
-    final Rect bounds = MatrixUtils.transformRect(transform, targetBox.paintBounds);
+    final RenderBox targetBox = target as RenderBox;
+    final Matrix4 transform = targetBox.getTransformTo(child);
+    final Rect bounds = MatrixUtils.transformRect(transform, rect);
     final Size contentSize = child.size;
 
     double leadingScrollOffset;
@@ -581,26 +655,40 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
         break;
     }
 
-    return leadingScrollOffset - (mainAxisExtent - targetMainAxisExtent) * alignment;
+    final double targetOffset = leadingScrollOffset - (mainAxisExtent - targetMainAxisExtent) * alignment;
+    final Rect targetRect = bounds.shift(_paintOffsetForPosition(targetOffset));
+    return RevealedOffset(offset: targetOffset, rect: targetRect);
   }
 
   @override
-  void showOnScreen([RenderObject child]) {
-    // Logic duplicated in [RenderViewportBase.showOnScreen].
-    if (child != null) {
-      // Move viewport the smallest distance to bring [child] on screen.
-      final double leadingEdgeOffset = getOffsetToReveal(child, 0.0);
-      final double trailingEdgeOffset = getOffsetToReveal(child, 1.0);
-      final double currentOffset = offset.pixels;
-      if ((currentOffset - leadingEdgeOffset).abs() < (currentOffset - trailingEdgeOffset).abs()) {
-        offset.jumpTo(leadingEdgeOffset);
-      } else {
-        offset.jumpTo(trailingEdgeOffset);
-      }
+  void showOnScreen({
+    RenderObject descendant,
+    Rect rect,
+    Duration duration = Duration.zero,
+    Curve curve = Curves.ease,
+  }) {
+    if (!offset.allowImplicitScrolling) {
+      return super.showOnScreen(
+        descendant: descendant,
+        rect: rect,
+        duration: duration,
+        curve: curve,
+      );
     }
 
-    // Make sure the viewport itself is on screen.
-    super.showOnScreen();
+    final Rect newRect = RenderViewportBase.showInViewport(
+      descendant: descendant,
+      viewport: this,
+      offset: offset,
+      rect: rect,
+      duration: duration,
+      curve: curve,
+    );
+    super.showOnScreen(
+      rect: newRect,
+      duration: duration,
+      curve: curve,
+    );
   }
 
   @override
@@ -608,14 +696,14 @@ class _RenderSingleChildViewport extends RenderBox with RenderObjectWithChildMix
     assert(axis != null);
     switch (axis) {
       case Axis.vertical:
-        return new Rect.fromLTRB(
+        return Rect.fromLTRB(
           semanticBounds.left,
           semanticBounds.top - cacheExtent,
           semanticBounds.right,
           semanticBounds.bottom + cacheExtent,
         );
       case Axis.horizontal:
-        return new Rect.fromLTRB(
+        return Rect.fromLTRB(
           semanticBounds.left - cacheExtent,
           semanticBounds.top,
           semanticBounds.right + cacheExtent,

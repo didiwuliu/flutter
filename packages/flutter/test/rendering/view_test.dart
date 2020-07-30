@@ -1,6 +1,8 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +12,7 @@ import 'rendering_tester.dart';
 void main() {
   group('RenderView', () {
     test('accounts for device pixel ratio in paintBounds', () {
-      layout(new RenderAspectRatio(aspectRatio: 1.0));
+      layout(RenderAspectRatio(aspectRatio: 1.0));
       pumpFrame();
       final Size logicalSize = renderer.renderView.configuration.size;
       final double devicePixelRatio = renderer.renderView.configuration.devicePixelRatio;

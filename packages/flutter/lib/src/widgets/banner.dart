@@ -1,10 +1,13 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 
 import 'basic.dart';
 import 'debug.dart';
@@ -13,14 +16,14 @@ import 'framework.dart';
 const double _kOffset = 40.0; // distance to bottom of banner, at a 45 degree angle inwards
 const double _kHeight = 12.0; // height of banner
 const double _kBottomOffset = _kOffset + 0.707 * _kHeight; // offset plus sqrt(2)/2 * banner height
-final Rect _kRect = new Rect.fromLTWH(-_kOffset, _kOffset - _kHeight, _kOffset * 2.0, _kHeight);
+const Rect _kRect = Rect.fromLTWH(-_kOffset, _kOffset - _kHeight, _kOffset * 2.0, _kHeight);
 
-const Color _kColor = const Color(0xA0B71C1C);
-const TextStyle _kTextStyle = const TextStyle(
-  color: const Color(0xFFFFFFFF),
+const Color _kColor = Color(0xA0B71C1C);
+const TextStyle _kTextStyle = TextStyle(
+  color: Color(0xFFFFFFFF),
   fontSize: _kHeight * 0.85,
   fontWeight: FontWeight.w900,
-  height: 1.0
+  height: 1.0,
 );
 
 /// Where to show a [Banner].
@@ -62,13 +65,14 @@ class BannerPainter extends CustomPainter {
     @required this.textDirection,
     @required this.location,
     @required this.layoutDirection,
-    this.color: _kColor,
-    this.textStyle: _kTextStyle,
+    this.color = _kColor,
+    this.textStyle = _kTextStyle,
   }) : assert(message != null),
        assert(textDirection != null),
        assert(location != null),
        assert(color != null),
-       assert(textStyle != null);
+       assert(textStyle != null),
+       super(repaint: PaintingBinding.instance.systemFonts);
 
   /// The message to show in the banner.
   final String message;
@@ -82,19 +86,22 @@ class BannerPainter extends CustomPainter {
   /// context, the English phrase will be on the right and the Hebrew phrase on
   /// its left.
   ///
-  /// See also [layoutDirection], which controls the interpretation of values in
-  /// [location].
+  /// See also:
+  ///
+  ///  * [layoutDirection], which controls the interpretation of values in
+  ///    [location].
   final TextDirection textDirection;
 
-  /// Where to show the banner (e.g., the upper right corder).
+  /// Where to show the banner (e.g., the upper right corner).
   final BannerLocation location;
 
   /// The directionality of the layout.
   ///
   /// This value is used to interpret the [location] of the banner.
   ///
-  /// See also [textDirection], which controls the reading direction of the
-  /// [message].
+  /// See also:
+  ///
+  ///  * [textDirection], which controls the reading direction of the [message].
   final TextDirection layoutDirection;
 
   /// The color to paint behind the [message].
@@ -107,19 +114,22 @@ class BannerPainter extends CustomPainter {
   /// Defaults to bold, white text.
   final TextStyle textStyle;
 
+  static const BoxShadow _shadow = BoxShadow(
+    color: Color(0x7F000000),
+    blurRadius: 6.0,
+  );
+
   bool _prepared = false;
   TextPainter _textPainter;
   Paint _paintShadow;
   Paint _paintBanner;
 
   void _prepare() {
-    _paintShadow = new Paint()
-      ..color = const Color(0x7F000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
-    _paintBanner = new Paint()
+    _paintShadow = _shadow.toPaint();
+    _paintBanner = Paint()
       ..color = color;
-    _textPainter = new TextPainter(
-      text: new TextSpan(style: textStyle, text: message),
+    _textPainter = TextPainter(
+      text: TextSpan(style: textStyle, text: message),
       textAlign: TextAlign.center,
       textDirection: textDirection,
     );
@@ -137,7 +147,7 @@ class BannerPainter extends CustomPainter {
       ..drawRect(_kRect, _paintBanner);
     const double width = _kOffset * 2.0;
     _textPainter.layout(minWidth: width, maxWidth: width);
-    _textPainter.paint(canvas, _kRect.topLeft + new Offset(0.0, (_kRect.height - _textPainter.height) / 2.0));
+    _textPainter.paint(canvas, _kRect.topLeft + Offset(0.0, (_kRect.height - _textPainter.height) / 2.0));
   }
 
   @override
@@ -245,8 +255,8 @@ class Banner extends StatelessWidget {
     this.textDirection,
     @required this.location,
     this.layoutDirection,
-    this.color: _kColor,
-    this.textStyle: _kTextStyle,
+    this.color = _kColor,
+    this.textStyle = _kTextStyle,
   }) : assert(message != null),
        assert(location != null),
        assert(color != null),
@@ -272,11 +282,12 @@ class Banner extends StatelessWidget {
   ///
   /// Defaults to the ambient [Directionality], if any.
   ///
-  /// See also [layoutDirection], which controls the interpretation of the
-  /// [location].
+  /// See also:
+  ///
+  ///  * [layoutDirection], which controls the interpretation of the [location].
   final TextDirection textDirection;
 
-  /// Where to show the banner (e.g., the upper right corder).
+  /// Where to show the banner (e.g., the upper right corner).
   final BannerLocation location;
 
   /// The directionality of the layout.
@@ -285,8 +296,9 @@ class Banner extends StatelessWidget {
   ///
   /// Defaults to the ambient [Directionality], if any.
   ///
-  /// See also [textDirection], which controls the reading direction of the
-  /// [message].
+  /// See also:
+  ///
+  ///  * [textDirection], which controls the reading direction of the [message].
   final TextDirection layoutDirection;
 
   /// The color of the banner.
@@ -298,8 +310,8 @@ class Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     assert((textDirection != null && layoutDirection != null) || debugCheckHasDirectionality(context));
-    return new CustomPaint(
-      foregroundPainter: new BannerPainter(
+    return CustomPaint(
+      foregroundPainter: BannerPainter(
         message: message,
         textDirection: textDirection ?? Directionality.of(context),
         location: location,
@@ -314,11 +326,11 @@ class Banner extends StatelessWidget {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(new StringProperty('message', message, showName: false));
-    properties.add(new EnumProperty<TextDirection>('textDirection', textDirection, defaultValue: null));
-    properties.add(new EnumProperty<BannerLocation>('location', location));
-    properties.add(new EnumProperty<TextDirection>('layoutDirection', layoutDirection, defaultValue: null));
-    properties.add(new DiagnosticsProperty<Color>('color', color, showName: false));
+    properties.add(StringProperty('message', message, showName: false));
+    properties.add(EnumProperty<TextDirection>('textDirection', textDirection, defaultValue: null));
+    properties.add(EnumProperty<BannerLocation>('location', location));
+    properties.add(EnumProperty<TextDirection>('layoutDirection', layoutDirection, defaultValue: null));
+    properties.add(ColorProperty('color', color, showName: false));
     textStyle?.debugFillProperties(properties, prefix: 'text ');
   }
 }
@@ -327,10 +339,10 @@ class Banner extends StatelessWidget {
 /// [MaterialApp] builds one of these by default.
 /// Does nothing in release mode.
 class CheckedModeBanner extends StatelessWidget {
-  /// Creates a checked mode banner.
+  /// Creates a const checked mode banner.
   const CheckedModeBanner({
     Key key,
-    @required this.child
+    @required this.child,
   }) : super(key: key);
 
   /// The widget to show behind the banner.
@@ -342,7 +354,7 @@ class CheckedModeBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget result = child;
     assert(() {
-      result = new Banner(
+      result = Banner(
         child: result,
         message: 'DEBUG',
         textDirection: TextDirection.ltr,
@@ -361,6 +373,6 @@ class CheckedModeBanner extends StatelessWidget {
       message = '"DEBUG"';
       return true;
     }());
-    properties.add(new DiagnosticsNode.message(message));
+    properties.add(DiagnosticsNode.message(message));
   }
 }

@@ -1,6 +1,8 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 part of material_animated_icons;
 
@@ -16,15 +18,18 @@ part of material_animated_icons;
 ///
 /// The available icons are specified in [AnimatedIcons].
 ///
-/// ### Sample code
+/// {@youtube 560 315 https://www.youtube.com/watch?v=pJcbh8pbvJs}
+///
+/// {@tool snippet}
 ///
 /// ```dart
-/// new AnimatedIcon(
+/// AnimatedIcon(
 ///   icon: AnimatedIcons.menu_arrow,
 ///   progress: controller,
 ///   semanticLabel: 'Show menu',
 /// )
 /// ```
+/// {@end-tool}
 ///
 class AnimatedIcon extends StatelessWidget {
 
@@ -41,7 +46,8 @@ class AnimatedIcon extends StatelessWidget {
     this.semanticLabel,
     this.textDirection,
   }) : assert(progress != null),
-       assert(icon != null);
+       assert(icon != null),
+       super(key: key);
 
   /// The animation progress for the animated icon.
   ///
@@ -84,8 +90,8 @@ class AnimatedIcon extends StatelessWidget {
   ///
   /// See also:
   ///
-  ///  * [Semantics.label], which is set to [semanticLabel] in the underlying
-  ///    [Semantics] widget.
+  ///  * [SemanticsProperties.label], which is set to [semanticLabel] in the
+  ///    underlying [Semantics] widget.
   final String semanticLabel;
 
   /// The text direction to use for rendering the icon.
@@ -96,11 +102,11 @@ class AnimatedIcon extends StatelessWidget {
   /// horizontally (e.g back arrow will point right).
   final TextDirection textDirection;
 
-  static final _UiPathFactory _pathFactory = () => new ui.Path();
+  static final _UiPathFactory _pathFactory = () => ui.Path();
 
   @override
   Widget build(BuildContext context) {
-    final _AnimatedIconData iconData = icon;
+    final _AnimatedIconData iconData = icon as _AnimatedIconData;
     final IconThemeData iconTheme = IconTheme.of(context);
     final double iconSize = size ?? iconTheme.size;
     final TextDirection textDirection = this.textDirection ?? Directionality.of(context);
@@ -108,11 +114,11 @@ class AnimatedIcon extends StatelessWidget {
     Color iconColor = color ?? iconTheme.color;
     if (iconOpacity != 1.0)
       iconColor = iconColor.withOpacity(iconColor.opacity * iconOpacity);
-    return new Semantics(
+    return Semantics(
       label: semanticLabel,
-      child: new CustomPaint(
-        size: new Size(iconSize, iconSize),
-        painter: new _AnimatedIconPainter(
+      child: CustomPaint(
+        size: Size(iconSize, iconSize),
+        painter: _AnimatedIconPainter(
           paths: iconData.paths,
           progress: progress,
           color: iconColor,
@@ -125,7 +131,7 @@ class AnimatedIcon extends StatelessWidget {
   }
 }
 
-typedef ui.Path _UiPathFactory();
+typedef _UiPathFactory = ui.Path Function();
 
 class _AnimatedIconPainter extends CustomPainter {
   _AnimatedIconPainter({
@@ -157,8 +163,8 @@ class _AnimatedIconPainter extends CustomPainter {
       canvas.translate(-size.width, -size.height);
     }
 
-    final double clampedProgress = progress.value.clamp(0.0, 1.0);
-    for (_PathFrames path in paths)
+    final double clampedProgress = progress.value.clamp(0.0, 1.0) as double;
+    for (final _PathFrames path in paths)
       path.paint(canvas, color, uiPathFactory, clampedProgress);
   }
 
@@ -187,19 +193,19 @@ class _AnimatedIconPainter extends CustomPainter {
 class _PathFrames {
   const _PathFrames({
     @required this.commands,
-    @required this.opacities
+    @required this.opacities,
   });
 
   final List<_PathCommand> commands;
   final List<double> opacities;
 
   void paint(ui.Canvas canvas, Color color, _UiPathFactory uiPathFactory, double progress) {
-    final double opacity = _interpolate(opacities, progress, lerpDouble);
-    final ui.Paint paint = new ui.Paint()
+    final double opacity = _interpolate<double>(opacities, progress, lerpDouble);
+    final ui.Paint paint = ui.Paint()
       ..style = PaintingStyle.fill
       ..color = color.withOpacity(color.opacity * opacity);
     final ui.Path path = uiPathFactory();
-    for (_PathCommand command in commands)
+    for (final _PathCommand command in commands)
       command.apply(path, progress);
     canvas.drawPath(path, paint);
   }
@@ -226,7 +232,7 @@ class _PathMoveTo extends _PathCommand {
 
   @override
   void apply(Path path, double progress) {
-    final Offset offset = _interpolate(points, progress, Offset.lerp);
+    final Offset offset = _interpolate<Offset>(points, progress, Offset.lerp);
     path.moveTo(offset.dx, offset.dy);
   }
 }
@@ -240,13 +246,13 @@ class _PathCubicTo extends _PathCommand {
 
   @override
   void apply(Path path, double progress) {
-    final Offset controlPoint1 = _interpolate(controlPoints1, progress, Offset.lerp);
-    final Offset controlPoint2 = _interpolate(controlPoints2, progress, Offset.lerp);
-    final Offset targetPoint = _interpolate(targetPoints, progress, Offset.lerp);
+    final Offset controlPoint1 = _interpolate<Offset>(controlPoints1, progress, Offset.lerp);
+    final Offset controlPoint2 = _interpolate<Offset>(controlPoints2, progress, Offset.lerp);
+    final Offset targetPoint = _interpolate<Offset>(targetPoints, progress, Offset.lerp);
     path.cubicTo(
       controlPoint1.dx, controlPoint1.dy,
       controlPoint2.dx, controlPoint2.dy,
-      targetPoint.dx, targetPoint.dy
+      targetPoint.dx, targetPoint.dy,
     );
   }
 }
@@ -259,7 +265,7 @@ class _PathLineTo extends _PathCommand {
 
   @override
   void apply(Path path, double progress) {
-    final Offset point = _interpolate(points, progress, Offset.lerp);
+    final Offset point = _interpolate<Offset>(points, progress, Offset.lerp);
     path.lineTo(point.dx, point.dy);
   }
 }
@@ -296,4 +302,4 @@ T _interpolate<T>(List<T> values, double progress, _Interpolator<T> interpolator
   return interpolator(values[lowIdx], values[highIdx], t);
 }
 
-typedef T _Interpolator<T>(T a, T b, double progress);
+typedef _Interpolator<T> = T Function(T a, T b, double progress);

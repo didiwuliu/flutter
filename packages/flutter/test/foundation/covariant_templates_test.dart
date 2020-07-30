@@ -1,6 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -14,10 +16,10 @@ class A<U extends X> {
 
 void main() {
   test('Assignment through a covariant template throws exception', () {
-    final A<Y> ay = new A<Y>();
+    final A<Y> ay = A<Y>();
     final A<X> ayAsAx = ay;
     expect(() {
-      ayAsAx.u = new X();
-    }, throwsAssertionError);
+      ayAsAx.u = X();
+    }, throwsA(isA<TypeError>()));
   });
 }

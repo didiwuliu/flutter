@@ -1,6 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -13,11 +15,7 @@ import 'scroll_metrics.dart';
 /// have bubbled through.
 ///
 /// This is used by [ScrollNotification] and [OverscrollIndicatorNotification].
-abstract class ViewportNotificationMixin extends Notification {
-  // This class is intended to be used as a mixin, and should not be
-  // extended directly.
-  factory ViewportNotificationMixin._() => null;
-
+mixin ViewportNotificationMixin on Notification {
   /// The number of viewports that this notification has bubbled through.
   ///
   /// Typically listeners only respond to notifications with a [depth] of zero.
@@ -185,7 +183,7 @@ class OverscrollNotification extends ScrollNotification {
     @required BuildContext context,
     this.dragDetails,
     @required this.overscroll,
-    this.velocity: 0.0,
+    this.velocity = 0.0,
   }) : assert(overscroll != null),
        assert(overscroll.isFinite),
        assert(overscroll != 0.0),
@@ -284,7 +282,7 @@ class UserScrollNotification extends ScrollNotification {
 
 /// A predicate for [ScrollNotification], used to customize widgets that
 /// listen to notifications from their children.
-typedef bool ScrollNotificationPredicate(ScrollNotification notification);
+typedef ScrollNotificationPredicate = bool Function(ScrollNotification notification);
 
 /// A [ScrollNotificationPredicate] that checks whether
 /// `notification.depth == 0`, which means that the notification did not bubble

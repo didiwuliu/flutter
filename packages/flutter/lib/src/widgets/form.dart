@@ -1,6 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'framework.dart';
 import 'navigator.dart';
@@ -15,6 +17,60 @@ import 'will_pop_scope.dart';
 /// descendant of this [Form]. To obtain the [FormState], you may use [Form.of]
 /// with a context whose ancestor is the [Form], or pass a [GlobalKey] to the
 /// [Form] constructor and call [GlobalKey.currentState].
+///
+/// {@tool dartpad --template=stateful_widget_scaffold}
+/// This example shows a [Form] with one [TextFormField] to enter an email
+/// address and an [ElevatedButton] to submit the form. A [GlobalKey] is used here
+/// to identify the [Form] and validate input.
+///
+/// ![](https://flutter.github.io/assets-for-api-docs/assets/widgets/form.png)
+///
+/// ```dart
+/// final _formKey = GlobalKey<FormState>();
+///
+/// @override
+/// Widget build(BuildContext context) {
+///   return Form(
+///     key: _formKey,
+///     child: Column(
+///       crossAxisAlignment: CrossAxisAlignment.start,
+///       children: <Widget>[
+///         TextFormField(
+///           decoration: const InputDecoration(
+///             hintText: 'Enter your email',
+///           ),
+///           validator: (value) {
+///             if (value.isEmpty) {
+///               return 'Please enter some text';
+///             }
+///             return null;
+///           },
+///         ),
+///         Padding(
+///           padding: const EdgeInsets.symmetric(vertical: 16.0),
+///           child: ElevatedButton(
+///             onPressed: () {
+///               // Validate will return true if the form is valid, or false if
+///               // the form is invalid.
+///               if (_formKey.currentState.validate()) {
+///                 // Process data.
+///               }
+///             },
+///             child: Text('Submit'),
+///           ),
+///         ),
+///       ],
+///     ),
+///   );
+/// }
+/// ```
+/// {@end-tool}
+///
+/// See also:
+///
+///  * [GlobalKey], a key that is unique across the entire app.
+///  * [FormField], a single form field widget that maintains the current state.
+///  * [TextFormField], a convenience widget that wraps a [TextField] widget in a [FormField].
 class Form extends StatefulWidget {
   /// Creates a container for form fields.
   ///
@@ -22,10 +78,20 @@ class Form extends StatefulWidget {
   const Form({
     Key key,
     @required this.child,
-    this.autovalidate: false,
+    this.autovalidate = false,
     this.onWillPop,
     this.onChanged,
+    AutovalidateMode autovalidateMode,
   }) : assert(child != null),
+       assert(autovalidate != null),
+       assert(
+         autovalidate == false ||
+         autovalidate == true && autovalidateMode == null,
+         'autovalidate and autovalidateMode should not be used together.'
+       ),
+       autovalidateMode = autovalidate
+           ? AutovalidateMode.always
+           : (autovalidateMode ?? AutovalidateMode.disabled),
        super(key: key);
 
   /// Returns the closest [FormState] which encloses the given context.
@@ -37,7 +103,7 @@ class Form extends StatefulWidget {
   /// form.save();
   /// ```
   static FormState of(BuildContext context) {
-    final _FormScope scope = context.inheritFromWidgetOfExactType(_FormScope);
+    final _FormScope scope = context.dependOnInheritedWidgetOfExactType<_FormScope>();
     return scope?._formState;
   }
 
@@ -71,8 +137,14 @@ class Form extends StatefulWidget {
   /// will rebuild.
   final VoidCallback onChanged;
 
+  /// Used to enable/disable form fields auto validation and update their error
+  /// text.
+  ///
+  /// {@macro flutter.widgets.form.autovalidateMode}
+  final AutovalidateMode autovalidateMode;
+
   @override
-  FormState createState() => new FormState();
+  FormState createState() => FormState();
 }
 
 /// State associated with a [Form] widget.
@@ -83,13 +155,18 @@ class Form extends StatefulWidget {
 /// Typically obtained via [Form.of].
 class FormState extends State<Form> {
   int _generation = 0;
-  final Set<FormFieldState<dynamic>> _fields = new Set<FormFieldState<dynamic>>();
+  bool _hasInteractedByUser = false;
+  final Set<FormFieldState<dynamic>> _fields = <FormFieldState<dynamic>>{};
 
   // Called when a form field has changed. This will cause all form fields
   // to rebuild, useful if form fields have interdependencies.
   void _fieldDidChange() {
     if (widget.onChanged != null)
       widget.onChanged();
+
+
+    _hasInteractedByUser = _fields
+        .any((FormFieldState<dynamic> field) => field._hasInteractedByUser);
     _forceRebuild();
   }
 
@@ -109,11 +186,22 @@ class FormState extends State<Form> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.autovalidate)
-      _validate();
-    return new WillPopScope(
+    switch (widget.autovalidateMode) {
+      case AutovalidateMode.always:
+        _validate();
+        break;
+      case AutovalidateMode.onUserInteraction:
+        if (_hasInteractedByUser) {
+          _validate();
+        }
+        break;
+      case AutovalidateMode.disabled:
+        break;
+    }
+
+    return WillPopScope(
       onWillPop: widget.onWillPop,
-      child: new _FormScope(
+      child: _FormScope(
         formState: this,
         generation: _generation,
         child: widget.child,
@@ -123,20 +211,21 @@ class FormState extends State<Form> {
 
   /// Saves every [FormField] that is a descendant of this [Form].
   void save() {
-    for (FormFieldState<dynamic> field in _fields)
+    for (final FormFieldState<dynamic> field in _fields)
       field.save();
   }
 
   /// Resets every [FormField] that is a descendant of this [Form] back to its
-  /// [FormField.initialState].
+  /// [FormField.initialValue].
   ///
   /// The [Form.onChanged] callback will be called.
   ///
-  /// If the form's [Form.autovalidate] property is true, the fields will all be
-  /// revalidated after being reset.
+  /// If the form's [Form.autovalidateMode] property is [AutovalidateMode.always],
+  /// the fields will all be revalidated after being reset.
   void reset() {
-    for (FormFieldState<dynamic> field in _fields)
+    for (final FormFieldState<dynamic> field in _fields)
       field.reset();
+    _hasInteractedByUser = false;
     _fieldDidChange();
   }
 
@@ -145,13 +234,14 @@ class FormState extends State<Form> {
   ///
   /// The form will rebuild to report the results.
   bool validate() {
+    _hasInteractedByUser = true;
     _forceRebuild();
     return _validate();
   }
 
   bool _validate() {
     bool hasError = false;
-    for (FormFieldState<dynamic> field in _fields)
+    for (final FormFieldState<dynamic> field in _fields)
       hasError = !field.validate() || hasError;
     return !hasError;
   }
@@ -162,7 +252,7 @@ class _FormScope extends InheritedWidget {
     Key key,
     Widget child,
     FormState formState,
-    int generation
+    int generation,
   }) : _formState = formState,
        _generation = generation,
        super(key: key, child: child);
@@ -182,18 +272,21 @@ class _FormScope extends InheritedWidget {
 
 /// Signature for validating a form field.
 ///
+/// Returns an error string to display if the input is invalid, or null
+/// otherwise.
+///
 /// Used by [FormField.validator].
-typedef String FormFieldValidator<T>(T value);
+typedef FormFieldValidator<T> = String Function(T value);
 
 /// Signature for being notified when a form field changes value.
 ///
 /// Used by [FormField.onSaved].
-typedef void FormFieldSetter<T>(T newValue);
+typedef FormFieldSetter<T> = void Function(T newValue);
 
 /// Signature for building the widget representing the form field.
 ///
 /// Used by [FormField.builder].
-typedef Widget FormFieldBuilder<T>(FormFieldState<T> field);
+typedef FormFieldBuilder<T> = Widget Function(FormFieldState<T> field);
 
 /// A single form field.
 ///
@@ -226,8 +319,18 @@ class FormField<T> extends StatefulWidget {
     this.onSaved,
     this.validator,
     this.initialValue,
-    this.autovalidate: false,
+    this.autovalidate = false,
+    this.enabled = true,
+    AutovalidateMode autovalidateMode,
   }) : assert(builder != null),
+       assert(
+         autovalidate == false ||
+         autovalidate == true && autovalidateMode == null,
+         'autovalidate and autovalidateMode should not be used together.'
+       ),
+       autovalidateMode = autovalidate
+           ? AutovalidateMode.always
+           : (autovalidateMode ?? AutovalidateMode.disabled),
        super(key: key);
 
   /// An optional method to call with the final value when the form is saved via
@@ -240,6 +343,13 @@ class FormField<T> extends StatefulWidget {
   /// The returned value is exposed by the [FormFieldState.errorText] property.
   /// The [TextFormField] uses this to override the [InputDecoration.errorText]
   /// value.
+  ///
+  /// Alternating between error and normal state can cause the height of the
+  /// [TextFormField] to change if no other subtext decoration is set on the
+  /// field. To create a field whose height is fixed regardless of whether or
+  /// not an error is displayed, either wrap the  [TextFormField] in a fixed
+  /// height parent like [SizedBox], or set the [InputDecoration.helperText]
+  /// parameter to a space.
   final FormFieldValidator<T> validator;
 
   /// Function that returns the widget representing this form field. It is
@@ -253,11 +363,33 @@ class FormField<T> extends StatefulWidget {
   /// If true, this form field will validate and update its error text
   /// immediately after every change. Otherwise, you must call
   /// [FormFieldState.validate] to validate. If part of a [Form] that
-  /// autovalidates, this value will be ignored.
+  /// auto-validates, this value will be ignored.
   final bool autovalidate;
 
+  /// Whether the form is able to receive user input.
+  ///
+  /// Defaults to true. If [autovalidateMode] is not [AutovalidateMode.disabled],
+  /// the field will be auto validated. Likewise, if this field is false, the widget
+  /// will not be validated regardless of [autovalidateMode].
+  final bool enabled;
+
+  /// Used to enable/disable this form field auto validation and update its
+  /// error text.
+  ///
+  /// {@template flutter.widgets.form.autovalidateMode}
+  /// If [AutovalidateMode.onUserInteraction] this form field will only
+  /// auto-validate after its content changes, if [AutovalidateMode.always] it
+  /// will auto validate even without user interaction and
+  /// if [AutovalidateMode.disabled] the auto validation will be disabled.
+  ///
+  /// Defaults to [AutovalidateMode.disabled] if [autovalidate] is false which
+  /// means no auto validation will occur. If [autovalidate] is true then this
+  /// is set to [AutovalidateMode.always] for backward compatibility.
+  /// {@endtemplate}
+  final AutovalidateMode autovalidateMode;
+
   @override
-  FormFieldState<T> createState() => new FormFieldState<T>();
+  FormFieldState<T> createState() => FormFieldState<T>();
 }
 
 /// The current state of a [FormField]. Passed to the [FormFieldBuilder] method
@@ -265,6 +397,7 @@ class FormField<T> extends StatefulWidget {
 class FormFieldState<T> extends State<FormField<T>> {
   T _value;
   String _errorText;
+  bool _hasInteractedByUser = false;
 
   /// The current value of the form field.
   T get value => _value;
@@ -277,6 +410,16 @@ class FormFieldState<T> extends State<FormField<T>> {
   /// True if this field has any validation errors.
   bool get hasError => _errorText != null;
 
+  /// True if the current value is valid.
+  ///
+  /// This will not set [errorText] or [hasError] and it will not update
+  /// error display.
+  ///
+  /// See also:
+  ///
+  ///  * [validate], which may update [errorText] and [hasError].
+  bool get isValid => widget.validator?.call(_value) == null;
+
   /// Calls the [FormField]'s onSaved method with the current value.
   void save() {
     if (widget.onSaved != null)
@@ -287,12 +430,19 @@ class FormFieldState<T> extends State<FormField<T>> {
   void reset() {
     setState(() {
       _value = widget.initialValue;
+      _hasInteractedByUser = false;
       _errorText = null;
     });
+    Form.of(context)?._fieldDidChange();
   }
 
   /// Calls [FormField.validator] to set the [errorText]. Returns true if there
   /// were no errors.
+  ///
+  /// See also:
+  ///
+  ///  * [isValid], which passively gets the validity without setting
+  ///    [errorText] or [hasError].
   bool validate() {
     setState(() {
       _validate();
@@ -300,20 +450,21 @@ class FormFieldState<T> extends State<FormField<T>> {
     return !hasError;
   }
 
-  bool _validate() {
+  void _validate() {
     if (widget.validator != null)
       _errorText = widget.validator(_value);
-    return !hasError;
   }
 
   /// Updates this field's state to the new value. Useful for responding to
   /// child widget changes, e.g. [Slider]'s [Slider.onChanged] argument.
   ///
-  /// Triggers the [Form.onChanged] callback and, if the [Form.autovalidate]
-  /// field is set, revalidates all the fields of the form.
+  /// Triggers the [Form.onChanged] callback and, if [Form.autovalidateMode] is
+  /// [AutovalidateMode.always] or [AutovalidateMode.onUserInteraction],
+  /// revalidates all the fields of the form.
   void didChange(T value) {
     setState(() {
       _value = value;
+      _hasInteractedByUser = true;
     });
     Form.of(context)?._fieldDidChange();
   }
@@ -344,9 +495,34 @@ class FormFieldState<T> extends State<FormField<T>> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.autovalidate)
-      _validate();
+    if (widget.enabled) {
+      switch (widget.autovalidateMode) {
+        case AutovalidateMode.always:
+          _validate();
+          break;
+        case AutovalidateMode.onUserInteraction:
+          if (_hasInteractedByUser) {
+            _validate();
+          }
+          break;
+        case AutovalidateMode.disabled:
+          break;
+      }
+    }
     Form.of(context)?._register(this);
     return widget.builder(this);
   }
+}
+
+/// Used to configure the auto validation of [FormField] and [Form] widgets.
+enum AutovalidateMode {
+  /// No auto validation will occur.
+  disabled,
+
+  /// Used to auto-validate [Form] and [FormField] even without user interaction.
+  always,
+
+  /// Used to auto-validate [Form] and [FormField] only after each user
+  /// interaction.
+  onUserInteraction,
 }

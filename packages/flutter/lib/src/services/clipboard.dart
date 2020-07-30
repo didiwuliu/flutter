@@ -1,6 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'dart:async';
 
@@ -23,6 +25,9 @@ class ClipboardData {
 
 /// Utility methods for interacting with the system's clipboard.
 class Clipboard {
+  // This class is not meant to be instantiated or extended; this constructor
+  // prevents instantiation and extension.
+  // ignore: unused_element
   Clipboard._();
 
   // Constants for common [getData] [format] types.
@@ -33,8 +38,8 @@ class Clipboard {
   static const String kTextPlain = 'text/plain';
 
   /// Stores the given clipboard data on the clipboard.
-  static Future<Null> setData(ClipboardData data) async {
-    await SystemChannels.platform.invokeMethod(
+  static Future<void> setData(ClipboardData data) async {
+    await SystemChannels.platform.invokeMethod<void>(
       'Clipboard.setData',
       <String, dynamic>{
         'text': data.text,
@@ -56,6 +61,6 @@ class Clipboard {
     );
     if (result == null)
       return null;
-    return new ClipboardData(text: result['text']);
+    return ClipboardData(text: result['text'] as String);
   }
 }

@@ -1,7 +1,10 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @dart = 2.8
+
+@TestOn('!chrome')
 import 'dart:async';
 import 'dart:io';
 
@@ -22,16 +25,16 @@ void _tests() {
     debugResetSemanticsIdCounter();
   });
 
-  Future<Null> pumpTestWidget(WidgetTester tester) async {
-    await tester.pumpWidget(new MaterialApp(
-      home: new ListView(
+  Future<void> pumpTestWidget(WidgetTester tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: ListView(
         children: <Widget>[
           const Text('Plain text'),
-          new Semantics(
+          Semantics(
             selected: true,
             checked: true,
-            onTap: () {},
-            onDecrease: () {},
+            onTap: () { },
+            onDecrease: () { },
             value: 'test-value',
             increasedValue: 'test-increasedValue',
             decreasedValue: 'test-decreasedValue',
@@ -51,17 +54,17 @@ void _tests() {
   //
   // This test is flexible w.r.t. leading and trailing whitespace.
   testWidgets('generates code', (WidgetTester tester) async {
-    final SemanticsTester semantics = new SemanticsTester(tester);
+    final SemanticsTester semantics = SemanticsTester(tester);
     await pumpTestWidget(tester);
     final String code = semantics
       .generateTestSemanticsExpressionForCurrentSemanticsTree(DebugSemanticsDumpOrder.inverseHitTest)
       .split('\n')
-      .map((String line) => line.trim())
+      .map<String>((String line) => line.trim())
       .join('\n')
       .trim() + ',';
 
     File findThisTestFile(Directory directory) {
-      for (FileSystemEntity entity in directory.listSync()) {
+      for (final FileSystemEntity entity in directory.listSync()) {
         if (entity is Directory) {
           final File childSearch = findThisTestFile(entity);
           if (childSearch != null) {
@@ -82,7 +85,7 @@ void _tests() {
       expectedCode.indexOf('^' * 12) - 3,
     )
       .split('\n')
-      .map((String line) => line.trim())
+      .map<String>((String line) => line.trim())
       .join('\n')
       .trim();
     semantics.dispose();
@@ -90,7 +93,7 @@ void _tests() {
   });
 
   testWidgets('generated code is correct', (WidgetTester tester) async {
-    final SemanticsTester semantics = new SemanticsTester(tester);
+    final SemanticsTester semantics = SemanticsTester(tester);
     await pumpTestWidget(tester);
     expect(
       semantics,
@@ -101,39 +104,45 @@ void _tests() {
         // generateTestSemanticsExpressionForCurrentSemanticsTree. Otherwise,
         // the test 'generates code', defined above, will fail.
         // vvvvvvvvvvvv
-        new TestSemantics.root(
+        TestSemantics.root(
           children: <TestSemantics>[
-            new TestSemantics(
+            TestSemantics(
               id: 1,
               textDirection: TextDirection.ltr,
               children: <TestSemantics>[
-                new TestSemantics(
+                TestSemantics(
                   id: 2,
-                  flags: <SemanticsFlag>[SemanticsFlag.scopesRoute],
                   children: <TestSemantics>[
-                    new TestSemantics(
+                    TestSemantics(
                       id: 3,
+                      flags: <SemanticsFlag>[SemanticsFlag.scopesRoute],
                       children: <TestSemantics>[
-                        new TestSemantics(
-                          id: 6,
+                        TestSemantics(
+                          id: 4,
                           children: <TestSemantics>[
-                            new TestSemantics(
-                              id: 4,
-                              tags: <SemanticsTag>[const SemanticsTag('RenderViewport.twoPane')],
-                              label: 'Plain text',
-                              textDirection: TextDirection.ltr,
-                            ),
-                            new TestSemantics(
-                              id: 5,
-                              tags: <SemanticsTag>[const SemanticsTag('RenderViewport.twoPane')],
-                              flags: <SemanticsFlag>[SemanticsFlag.hasCheckedState, SemanticsFlag.isChecked, SemanticsFlag.isSelected],
-                              actions: <SemanticsAction>[SemanticsAction.tap, SemanticsAction.decrease],
-                              label: '‪Interactive text‬',
-                              value: 'test-value',
-                              increasedValue: 'test-increasedValue',
-                              decreasedValue: 'test-decreasedValue',
-                              hint: 'test-hint',
-                              textDirection: TextDirection.rtl,
+                            TestSemantics(
+                              id: 7,
+                              flags: <SemanticsFlag>[SemanticsFlag.hasImplicitScrolling],
+                              children: <TestSemantics>[
+                                TestSemantics(
+                                  id: 5,
+                                  tags: <SemanticsTag>[const SemanticsTag('RenderViewport.twoPane')],
+                                  label: 'Plain text',
+                                  textDirection: TextDirection.ltr,
+                                ),
+                                TestSemantics(
+                                  id: 6,
+                                  tags: <SemanticsTag>[const SemanticsTag('RenderViewport.twoPane')],
+                                  flags: <SemanticsFlag>[SemanticsFlag.hasCheckedState, SemanticsFlag.isChecked, SemanticsFlag.isSelected],
+                                  actions: <SemanticsAction>[SemanticsAction.tap, SemanticsAction.decrease],
+                                  label: '‪Interactive text‬',
+                                  value: 'test-value',
+                                  increasedValue: 'test-increasedValue',
+                                  decreasedValue: 'test-decreasedValue',
+                                  hint: 'test-hint',
+                                  textDirection: TextDirection.rtl,
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -149,7 +158,7 @@ void _tests() {
         ignoreRect: true,
         ignoreTransform: true,
         ignoreId: true,
-      )
+      ),
     );
     semantics.dispose();
   });

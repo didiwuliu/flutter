@@ -1,6 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// @dart = 2.8
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
@@ -9,25 +11,25 @@ import 'package:flutter/rendering.dart';
 void main() {
   testWidgets('Nested ListView with shrinkWrap', (WidgetTester tester) async {
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           shrinkWrap: true,
           children: <Widget>[
-            new ListView(
+            ListView(
               shrinkWrap: true,
               children: const <Widget>[
-                const Text('1'),
-                const Text('2'),
-                const Text('3'),
+                Text('1'),
+                Text('2'),
+                Text('3'),
               ],
             ),
-            new ListView(
+            ListView(
               shrinkWrap: true,
               children: const <Widget>[
-                const Text('4'),
-                const Text('5'),
-                const Text('6'),
+                Text('4'),
+                Text('5'),
+                Text('6'),
               ],
             ),
           ],
@@ -40,23 +42,23 @@ void main() {
     // Regression test for https://github.com/flutter/flutter/issues/5950
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
+            SizedBox(height: 100.0, child: Text('100')),
           ],
         ),
       ),
     );
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
-            const SizedBox(height: 200.0, child: const Text('200')),
+            SizedBox(height: 100.0, child: Text('100')),
+            SizedBox(height: 200.0, child: Text('200')),
           ],
         ),
       ),
@@ -67,11 +69,11 @@ void main() {
 
   testWidgets('Underflowing ListView contentExtent should track additional children', (WidgetTester tester) async {
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
+            SizedBox(height: 100.0, child: Text('100')),
           ],
         ),
       ),
@@ -81,12 +83,12 @@ void main() {
     expect(list.geometry.scrollExtent, equals(100.0));
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
-            const SizedBox(height: 200.0, child: const Text('200')),
+            SizedBox(height: 100.0, child: Text('100')),
+            SizedBox(height: 200.0, child: Text('200')),
           ],
         ),
       ),
@@ -94,10 +96,10 @@ void main() {
     expect(list.geometry.scrollExtent, equals(300.0));
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
-          children: const <Widget>[]
+        child: ListView(
+          children: const <Widget>[],
         ),
       ),
     );
@@ -106,12 +108,12 @@ void main() {
 
   testWidgets('Overflowing ListView should relayout for missing children', (WidgetTester tester) async {
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 300.0, child: const Text('300')),
-            const SizedBox(height: 400.0, child: const Text('400')),
+            SizedBox(height: 300.0, child: Text('300')),
+            SizedBox(height: 400.0, child: Text('400')),
           ],
         ),
       ),
@@ -121,11 +123,11 @@ void main() {
     expect(find.text('400'), findsOneWidget);
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 300.0, child: const Text('300')),
+            SizedBox(height: 300.0, child: Text('300')),
           ],
         ),
       ),
@@ -135,10 +137,10 @@ void main() {
     expect(find.text('400'), findsNothing);
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
-          children: const <Widget>[]
+        child: ListView(
+          children: const <Widget>[],
         ),
       ),
     );
@@ -149,12 +151,12 @@ void main() {
 
   testWidgets('Overflowing ListView should not relayout for additional children', (WidgetTester tester) async {
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 300.0, child: const Text('300')),
-            const SizedBox(height: 400.0, child: const Text('400')),
+            SizedBox(height: 300.0, child: Text('300')),
+            SizedBox(height: 400.0, child: Text('400')),
           ],
         ),
       ),
@@ -164,13 +166,13 @@ void main() {
     expect(find.text('400'), findsOneWidget);
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 300.0, child: const Text('300')),
-            const SizedBox(height: 400.0, child: const Text('400')),
-            const SizedBox(height: 100.0, child: const Text('100')),
+            SizedBox(height: 300.0, child: Text('300')),
+            SizedBox(height: 400.0, child: Text('400')),
+            SizedBox(height: 100.0, child: Text('100')),
           ],
         ),
       ),
@@ -188,11 +190,11 @@ void main() {
     // be enabled.
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
+            SizedBox(height: 100.0, child: Text('100')),
           ],
         ),
       ),
@@ -202,13 +204,13 @@ void main() {
     expect(scrollable.position.maxScrollExtent, 0.0);
 
     await tester.pumpWidget(
-      new Directionality(
+      Directionality(
         textDirection: TextDirection.ltr,
-        child: new ListView(
+        child: ListView(
           children: const <Widget>[
-            const SizedBox(height: 100.0, child: const Text('100')),
-            const SizedBox(height: 200.0, child: const Text('200')),
-            const SizedBox(height: 400.0, child: const Text('400')),
+            SizedBox(height: 100.0, child: Text('100')),
+            SizedBox(height: 200.0, child: Text('200')),
+            SizedBox(height: 400.0, child: Text('400')),
           ],
         ),
       ),

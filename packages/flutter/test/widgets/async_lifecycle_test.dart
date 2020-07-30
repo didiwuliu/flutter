@@ -1,3 +1,9 @@
+// Copyright 2014 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// @dart = 2.8
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -5,18 +11,18 @@ class InvalidOnInitLifecycleWidget extends StatefulWidget {
   const InvalidOnInitLifecycleWidget({Key key}) : super(key: key);
 
   @override
-  InvalidOnInitLifecycleWidgetState createState() => new InvalidOnInitLifecycleWidgetState();
+  InvalidOnInitLifecycleWidgetState createState() => InvalidOnInitLifecycleWidgetState();
 }
 
 class InvalidOnInitLifecycleWidgetState extends State<InvalidOnInitLifecycleWidget> {
   @override
-  void initState() async {
+  Future<void> initState() async {
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
-    return new Container();
+    return Container();
   }
 }
 
@@ -26,18 +32,18 @@ class InvalidDidUpdateWidgetLifecycleWidget extends StatefulWidget {
   final int id;
 
   @override
-  InvalidDidUpdateWidgetLifecycleWidgetState createState() => new InvalidDidUpdateWidgetLifecycleWidgetState();
+  InvalidDidUpdateWidgetLifecycleWidgetState createState() => InvalidDidUpdateWidgetLifecycleWidgetState();
 }
 
 class InvalidDidUpdateWidgetLifecycleWidgetState extends State<InvalidDidUpdateWidgetLifecycleWidget> {
   @override
-  void didUpdateWidget(InvalidDidUpdateWidgetLifecycleWidget oldWidget) async {
+  Future<void> didUpdateWidget(InvalidDidUpdateWidgetLifecycleWidget oldWidget) async {
     super.didUpdateWidget(oldWidget);
   }
 
   @override
   Widget build(BuildContext context) {
-    return new Container();
+    return Container();
   }
 }
 
